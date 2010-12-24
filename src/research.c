@@ -43,6 +43,7 @@
 #include "mission.h"
 #include "frend.h"		// frontend ids.
 #include "intimage.h"
+#include "intdisplay.h"
 #include "multiplay.h"
 
 //used to calc the research power
@@ -1744,7 +1745,8 @@ void researchResult(UDWORD researchIndex, UBYTE player, BOOL bDisplay, STRUCTURE
 
 	if (psResearchFacility)
 	{
-		psResearchFacility->pFunctionality->researchFacility.psSubject = NULL;		// Make sure topic is cleared
+		StructureGetResearch(psResearchFacility)->psSubject = NULL;		// Make sure topic is cleared
+		powerQueueCancelWorker((BASE_OBJECT *)psResearchFacility);
 	}
 	if ((bMultiPlayer || player == selectedPlayer) && bTrigger)
 	{
@@ -1879,7 +1881,7 @@ void holdResearch(STRUCTURE *psBuilding)
 	if (psResFac->psSubject)
 	{
 		//set the time the research facilty was put on hold
-		psResFac->timeStartHold = gameTime;
+		psResFac->workOnHold = true;
 		//play audio to indicate on hold
 		if (psBuilding->player == selectedPlayer)
 		{
@@ -1899,15 +1901,7 @@ void releaseResearch(STRUCTURE *psBuilding)
 
 	psResFac = (RESEARCH_FACILITY *)psBuilding->pFunctionality;
 
-	if (psResFac->psSubject && psResFac->timeStartHold)
-	{
-		//adjust the start time for the current subject
-		if (psResFac->timeStarted != ACTION_START_TIME)
-		{
-			psResFac->timeStarted += (gameTime - psResFac->timeStartHold);
-		}
-		psResFac->timeStartHold = 0;
-	}
+	psResFac->workOnHold = false;
 }
 
 
@@ -1965,11 +1959,8 @@ void cancelResearch(STRUCTURE *psBuilding)
 	if (psBuilding->pStructureType->type == REF_RESEARCH)
 	{
 		//check if waiting to accrue power
-		if (psResFac->timeStarted == ACTION_START_TIME)
+		if (!psResFac->workStarted)
 		{
-			//return the power
-			addPower(psBuilding->player, psResFac->powerAccrued);
-			psResFac->powerAccrued = 0;
 			// Reset this topic as not having been researched
 			ResetResearchStatus(pPlayerRes);
 		}
@@ -1978,9 +1969,7 @@ void cancelResearch(STRUCTURE *psBuilding)
 			// only PC version saves these
 			/*store the points - need to keep this so can add points after the topic
 			has been cancelled and restarted*/
-			pPlayerRes->currentPoints += (psResFac->researchPoints * (gameTime -
-			psResFac->timeStarted)) / GAME_TICKS_PER_SEC;
-
+			pPlayerRes->currentPoints = psResFac->workProgress;
 
 			// Set the researched flag
 			MakeResearchCancelled(pPlayerRes);
@@ -1990,6 +1979,7 @@ void cancelResearch(STRUCTURE *psBuilding)
 
 		// Initialise the research facility's subject
 		psResFac->psSubject = NULL;
+		powerQueueCancelWorker((BASE_OBJECT *)psBuilding);
 	}
 }
 

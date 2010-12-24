@@ -49,7 +49,7 @@
 #define EASY_POWER_MOD      110
 #define NORMAL_POWER_MOD    100
 #define HARD_POWER_MOD      90
-#define MAX_POWER           100000
+#define MAX_POWER           (100000<<8)
 
 //flag used to check for power calculations to be done or not
 BOOL	powerCalculated;
@@ -62,6 +62,11 @@ static float updateExtractedPower(STRUCTURE *psBuilding);
 
 //returns the relevant list based on OffWorld or OnWorld
 static STRUCTURE* powerStructList(UBYTE player);
+
+// O(1) method to remove a node, when given the previous node
+static inline void powerQueueCancelNext(int player, POWER_QUEUE* prevNode, bool clearCache);
+// find the next node the hard way - for queue types that don't support caching, or to update the cache
+static POWER_QUEUE* powerQueueFindNext(int player, POWER_QUEUE_TYPE type, BASE_OBJECT* worker);
 
 PLAYER_POWER		asPower[MAX_PLAYERS];
 
@@ -81,49 +86,16 @@ void clearPlayerPower(void)
 	for (player = 0; player < MAX_PLAYERS; player++)
 	{
 		asPower[player].currentPower = 0;
-		asPower[player].powerProduced = 0;
-		asPower[player].powerRequested = 0;
-		asPower[player].economyThrottle = 1;
-	}
-	nextPowerSystemUpdate = 0;
-}
-
-void throttleEconomy(void)
-{
-	int player;
-	float newThrottle;
-
-	if (gameTime < nextPowerSystemUpdate)
-	{
-		return;
-	}
-	nextPowerSystemUpdate = gameTime + 1000;
-
-	for (player = 0; player < MAX_PLAYERS; player++)
-	{
-		if (asPower[player].currentPower > asPower[player].powerRequested ||
-		    asPower[player].powerRequested <= asPower[player].powerProduced)
+		asPower[player].queuedPower = 0;
+		while (asPower[player].powerQueue)
 		{
-			// we have enough power
-			newThrottle = 1;
+			POWER_QUEUE* nextPowerQueue;
+			nextPowerQueue = asPower[player].powerQueue->next;
+			free(asPower[player].powerQueue);
+			asPower[player].powerQueue = nextPowerQueue;
 		}
-		else
-		{
-			newThrottle = (asPower[player].powerProduced + asPower[player].currentPower) / asPower[player].powerRequested;
-		}
-		if (newThrottle <= asPower[player].economyThrottle)
-		{
-			// quickly slow down
-			asPower[player].economyThrottle = newThrottle;
-		}
-		else if (asPower[player].powerRequested * asPower[player].economyThrottle * 2 < asPower[player].currentPower)
-		{
-			// slowly speed up
-			asPower[player].economyThrottle += 0.02;
-		}
-		CLIP(asPower[player].economyThrottle, 0, 1);
-		asPower[player].powerProduced = 0;
-		asPower[player].powerRequested = 0;
+		asPower[player].powerQueueBack = NULL;
+		asPower[player].powerQueueSize = 0;
 	}
 }
 
@@ -134,7 +106,7 @@ void releasePlayerPower(void)
 }
 
 /*check the current power - if enough return true, else return false */
-BOOL checkPower(int player, float quantity)
+BOOL checkPower(int player, int quantity)
 {
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "Bad player (%d)", player);
 
@@ -144,23 +116,23 @@ BOOL checkPower(int player, float quantity)
 		return true;
 	}
 
-	if (asPower[player].currentPower >= quantity)
+	if (asPower[player].currentPower >= (quantity<<8))
 	{
 		return true;
 	}
 	return false;
 }
 
-void usePower(int player, float quantity)
+void usePower(int player, int quantity)
 {
 	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "Bad player (%d)", player);
-	asPower[player].currentPower = MAX(0, asPower[player].currentPower - quantity);
+	asPower[player].currentPower = MAX(0, asPower[player].currentPower - (quantity<<8));
 }
 
-void addPower(int player, float quantity)
+void addPower(int player, int quantity)
 {
 	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "Bad player (%d)", player);
-	asPower[player].currentPower = MAX(0, asPower[player].currentPower + quantity);
+	asPower[player].currentPower = MAX(0, asPower[player].currentPower + (quantity<<8));
 	if (asPower[player].currentPower > MAX_POWER)
 	{
 		asPower[player].currentPower = MAX_POWER;
@@ -170,14 +142,7 @@ void addPower(int player, float quantity)
 /*resets the power calc flag for all players*/
 void powerCalc(BOOL on)
 {
-	if (on)
-	{
-		powerCalculated = true;
-	}
-	else
-	{
-		powerCalculated = false;
-	}
+	powerCalculated = on;
 }
 
 /** Each Resource Extractor yields EXTRACT_POINTS per second FOREVER */
@@ -249,8 +214,7 @@ STRUCTURE* powerStructList(UBYTE player)
 /* Update current power based on what Power Generators exist */
 void updatePlayerPower(UDWORD player)
 {
-	STRUCTURE		*psStruct;//, *psList;
-	float powerBefore = asPower[player].currentPower;
+	STRUCTURE		*psStruct;
 
 	ASSERT(player < MAX_PLAYERS, "updatePlayerPower: Bad player");
 
@@ -263,7 +227,33 @@ void updatePlayerPower(UDWORD player)
 			updateCurrentPower((POWER_GEN *)psStruct->pFunctionality, player);
 		}
 	}
-	asPower[player].powerProduced += asPower[player].currentPower - powerBefore;
+
+	// update power queue
+	{
+		POWER_QUEUE*	currentNode = asPower[player].powerQueue;
+		POWER_QUEUE*	prevNode = NULL;
+		int				currentPowerTotal = 0;
+		while (currentNode)
+		{
+			if (currentNode->worker->died)
+			{
+				currentNode = currentNode->next;
+				powerQueueCancelNext(player, prevNode, false);
+				if (currentNode->worker->type == OBJ_STRUCTURE)
+				{
+					((STRUCTURE*)currentNode->worker)->cachedPowerQueue = NULL; // shouldn't be an issue, but let's play it safe
+				}
+			}
+			else
+			{
+				currentPowerTotal += (currentNode->price<<8);
+				currentNode->ready = (currentPowerTotal <= asPower[player].currentPower);
+
+				prevNode = currentNode;
+				currentNode = currentNode->next;
+			}
+		}
+	}
 }
 
 /* Updates the current power based on the extracted power and a Power Generator*/
@@ -292,7 +282,7 @@ void updateCurrentPower(POWER_GEN *psPowerGen, UDWORD player)
 		}
 	}
 
-	asPower[player].currentPower += (extractedPower * psPowerGen->multiplier) / 100;
+	asPower[player].currentPower += (extractedPower * psPowerGen->multiplier * (1<<8)) / 100;
 	ASSERT(asPower[player].currentPower >= 0, "negative power");
 	if (asPower[player].currentPower > MAX_POWER)
 	{
@@ -301,19 +291,26 @@ void updateCurrentPower(POWER_GEN *psPowerGen, UDWORD player)
 }
 
 // only used in multiplayer games.
-void setPower(int player, float power)
+void setPower(int player, int power)
 {
 	ASSERT(player < MAX_PLAYERS, "setPower: Bad player (%u)", player);
 
-	asPower[player].currentPower = power;
+	asPower[player].currentPower = (power << 8);
 	ASSERT(asPower[player].currentPower >= 0, "negative power");
 }
 
-float getPower(int player)
+int getPower(int player)
 {
 	ASSERT(player < MAX_PLAYERS, "setPower: Bad player (%u)", player);
 
-	return asPower[player].currentPower;
+	return (asPower[player].currentPower >> 8);
+}
+
+int getQueuedPower(int player)
+{
+	ASSERT(player < MAX_PLAYERS, "setPower: Bad player (%u)", player);
+
+	return (asPower[player].queuedPower >> 8);
 }
 
 /*Temp function to give all players some power when a new game has been loaded*/
@@ -378,7 +375,6 @@ BOOL structUsesPower(STRUCTURE *psStruct)
 	    case REF_CYBORG_FACTORY:
     	case REF_VTOL_FACTORY:
 	    case REF_RESEARCH:
-	    case REF_REPAIR_FACILITY:
             bUsesPower = true;
             break;
         default:
@@ -399,9 +395,7 @@ BOOL droidUsesPower(DROID *psDroid)
     switch(psDroid->droidType)
     {
         case DROID_CONSTRUCT:
-	    case DROID_REPAIR:
         case DROID_CYBORG_CONSTRUCT:
-        case DROID_CYBORG_REPAIR:
             bUsesPower = true;
             break;
         default:
@@ -412,62 +406,339 @@ BOOL droidUsesPower(DROID *psDroid)
     return bUsesPower;
 }
 
-float requestPower(int player, float amount)
+/*
+ * Power queue subroutines
+ */
+
+// does this power queue type support caching?
+static inline bool powerQueueHasCache(POWER_QUEUE_TYPE type)
 {
-	// this is the amount that we are willing to give
-	float amountConsidered = amount * asPower[player].economyThrottle;
-
-	if (!powerCalculated)
+	return (type == PQ_RESEARCH || type == PQ_MANUFACTURE || type == PQ_BUILD);
+}
+// get the cached power queue node for this worker, if it exists
+static inline POWER_QUEUE* powerQueueCachedNext(int player, POWER_QUEUE_TYPE type, BASE_OBJECT* worker)
+{
+	if (type == PQ_RESEARCH || type == PQ_MANUFACTURE || type == PQ_BUILD)
 	{
-		return amount; // it's all yours
+		return ((STRUCTURE*)worker)->cachedPowerQueue;
 	}
-
-	// keep track on how much energy we could possibly spend
-	asPower[player].powerRequested += amount;
-	
-	if (amountConsidered <= asPower[player].currentPower)
+	return NULL;
+}
+// set the power queue cache, if it's a queue type that supports caching
+static inline void powerQueueSetCache(POWER_QUEUE_TYPE type, BASE_OBJECT* worker, POWER_QUEUE* pq)
+{
+	if (powerQueueHasCache(type))
 	{
-		// you can have it
-		asPower[player].currentPower -= amountConsidered;
-		return amountConsidered;
+		((STRUCTURE*)worker)->cachedPowerQueue = pq;
 	}
-	return 0; // no power this frame
+}
+// update the power queue cache; it's outdated
+static inline void powerQueueClearCache(int player, POWER_QUEUE_TYPE type, BASE_OBJECT* worker)
+{
+	powerQueueSetCache(type, worker, powerQueueFindNext(player, type, worker));
 }
 
-// Why is there randomity in the power code?
-static int randomRound(float val)
+/*
+ * Power queue
+ */
+
+// Returns percentage of price of current object we currently have
+int powerQueueProgress(BASE_OBJECT* worker)
 {
-	int intPart = val;
-	float floatPart = val - intPart;
-	if (gameRand(100) < floatPart*100)
+	if (worker && asPower[worker->player].powerQueue && asPower[worker->player].powerQueue->worker == worker)
 	{
-		return intPart + 1;
+		return MIN(100 * getPower(worker->player) / asPower[worker->player].powerQueue->price, 100);
 	}
-	return intPart;
+	return 0;
 }
 
-int requestPowerFor(int player, float amount, int points)
+// Returns node if the add was successful
+POWER_QUEUE* powerQueueAdd(POWER_QUEUE_TYPE type, BASE_OBJECT* worker, void* workSubject, int price)
 {
-	int pointsConsidered = randomRound(points * asPower[player].economyThrottle);
-	// only what it needs for the n amount of points we consider giving
-	float amountConsidered;
-
-	if (points == 0 || amount < 0.01 || !powerCalculated)
+	const int player = worker->player;
+	POWER_QUEUE* pqnode;
+	if (asPower[player].powerQueueSize > POWER_QUEUE_MAX)
 	{
-		return points;
+		return NULL;
 	}
 
-	amountConsidered = amount * (float) pointsConsidered / points;
-
-	// keep track on how much energy we could possibly spend
-	asPower[player].powerRequested += amount;
-	
-	if (amountConsidered <= asPower[player].currentPower)
+	pqnode = malloc(sizeof(POWER_QUEUE));
+	if (!pqnode) // we're kind of screwed if this happens
 	{
-		// you can have it
-		asPower[player].currentPower -= amountConsidered;
-		return pointsConsidered;
+		return NULL;
 	}
-	return 0; // no power this frame
+	pqnode->type = type;
+	pqnode->player = player;
+	pqnode->worker = worker;
+	pqnode->workSubject = workSubject;
+	pqnode->price = price;
+	pqnode->next = NULL;
+	asPower[player].queuedPower += (price<<8);
+	pqnode->ready = (asPower[player].queuedPower <= asPower[player].currentPower);
+
+	if (asPower[player].powerQueueBack)
+	{
+		asPower[player].powerQueueBack->next = pqnode;
+	}
+	else
+	{
+		asPower[player].powerQueue = pqnode;
+	}
+	asPower[player].powerQueueBack = pqnode;
+	if (!powerQueueCachedNext(player, type, worker))
+	{
+		powerQueueSetCache(type, worker, pqnode);
+	}
+	return pqnode;
+}
+
+// Move this node to the front of its queue
+bool powerQueueMoveToFront(POWER_QUEUE* node)
+{
+	int player;
+	POWER_QUEUE* currentNode;
+	if (!node)
+	{
+		return false;
+	}
+	player = node->player;
+	currentNode = asPower[player].powerQueue;
+	if (currentNode == node)
+	{
+		return true;
+	}
+	while (currentNode)
+	{
+		if (currentNode->next == node)
+		{
+			currentNode->next = node->next;
+			node->next = asPower[player].powerQueue;
+			asPower[player].powerQueue = node;
+			return true;
+		}
+		currentNode = currentNode->next;
+	}
+	return false;
+}
+
+// Move this node to the back of its queue
+bool powerQueueMoveToBack(POWER_QUEUE* node)
+{
+	int player;
+	POWER_QUEUE* currentNode;
+	if (!node)
+	{
+		return false;
+	}
+	player = node->player;
+	currentNode = asPower[player].powerQueue;
+	if (node->next == NULL)
+	{
+		return true;
+	}
+	if (currentNode == node)
+	{
+		asPower[player].powerQueue->next = node->next;
+		node->next = NULL;
+	}
+	else while (currentNode->next)
+	{
+		if (currentNode->next == node)
+		{
+			currentNode->next = node->next;
+			node->next = NULL;
+		}
+		currentNode = currentNode->next;
+	}
+	if (node->next == NULL && currentNode->next == NULL && node != currentNode)
+	{
+		currentNode->next = node;
+		return true;
+	}
+	return false;
+}
+
+// Returns true if the node was successfully removed
+bool powerQueueCancel(POWER_QUEUE* node)
+{
+	const int player = node->player;
+	POWER_QUEUE* currentNode = asPower[player].powerQueue;
+	if (currentNode == node)
+	{
+		powerQueueCancelNext(player,NULL,true);
+		return true;
+	}
+	while (currentNode)
+	{
+		if (currentNode->next == node)
+		{
+			powerQueueCancelNext(player,currentNode,true);
+			return true;
+		}
+		currentNode = currentNode->next;
+	}
+	return false;
+}
+
+// O(1) method to remove a node, when given the previous node
+static inline void powerQueueCancelNext(int player, POWER_QUEUE* prevNode, bool clearCache)
+{
+	POWER_QUEUE* node;
+	POWER_QUEUE_TYPE type;
+	BASE_OBJECT* worker;
+	if (!prevNode)
+	{
+		node = asPower[player].powerQueue;
+		type = node->type; worker = node->worker;
+
+		asPower[player].powerQueue = node->next;
+		if (node->next == NULL)
+		{
+			asPower[player].powerQueueBack = NULL;
+		}
+		asPower[player].queuedPower -= (node->price<<8);
+		free(node);
+	}
+	else
+	{
+		node = prevNode->next;
+		type = node->type; worker = node->worker;
+
+		prevNode->next = node->next;
+		asPower[player].queuedPower -= (node->price<<8);
+		free(node);
+	}
+	if (clearCache)
+	{
+		powerQueueClearCache(player, type, worker);
+	}
+}
+
+// cancel everything a worker has done
+void powerQueueCancelWorker(BASE_OBJECT* worker)
+{
+	const int player = worker->player;
+	POWER_QUEUE* currentNode = asPower[player].powerQueue;
+	if (!currentNode)
+	{
+		return;
+	}
+	if (currentNode->worker == worker)
+	{
+		powerQueueCancelNext(player,NULL,false);
+	}
+	while (currentNode && currentNode->next)
+	{
+		if (currentNode->next->worker == worker)
+		{
+			powerQueueCancelNext(player, currentNode, false);
+		}
+		currentNode = currentNode->next;
+	}
+	powerQueueSetCache(PQ_NONE, worker, NULL);
+}
+
+// cancel a single subject from a worker
+bool powerQueueCancelSubject(BASE_OBJECT* worker, void* workSubject)
+{
+	const int player = worker->player;
+	POWER_QUEUE* currentNode = asPower[player].powerQueue;
+	if (!currentNode)
+	{
+		return false;
+	}
+	if (currentNode->worker == worker && currentNode->workSubject == workSubject)
+	{
+		powerQueueCancelNext(player,NULL,true);
+		return true;
+	}
+	while (currentNode->next)
+	{
+		if (currentNode->next->worker == worker && currentNode->next->workSubject == workSubject)
+		{
+			powerQueueCancelNext(player,currentNode,true);
+			return true;
+		}
+		currentNode = currentNode->next;
+	}
+	return false;
+}
+
+// Returns true if the node was successfully accepted
+bool powerQueueAccept(POWER_QUEUE* node)
+{
+	const int player = node->player;
+	int price = node->price;
+	if (!checkPower(player,price))
+	{
+		return false;
+	}
+	if (powerQueueCancel(node))
+	{
+		usePower(player, node->price);
+		return true;
+	}
+	return false;
+}
+
+// Returns the next power queue node with the passed type and subject.
+static POWER_QUEUE* powerQueueFindNext(int player, POWER_QUEUE_TYPE type, BASE_OBJECT* worker)
+{
+	POWER_QUEUE* currentNode = asPower[player].powerQueue;
+	while (currentNode)
+	{
+		if (currentNode->type == type && currentNode->worker == worker)
+		{
+			return currentNode;
+		}
+		currentNode = currentNode->next;
+	}
+	return NULL;
+}
+
+POWER_QUEUE* powerQueueNext(POWER_QUEUE_TYPE type, BASE_OBJECT* worker)
+{
+	const int player = worker->player;
+	if (powerQueueHasCache(type))
+	{
+		return powerQueueCachedNext(player, type, worker);
+	}
+	return powerQueueFindNext(player, type, worker);
+}
+
+// Use this function if you want to use the power queue as a black box that you eventually get power out of.
+// Instructions: Repeatedly call it until it returns true. I call this "forcing" something through the power queue,
+//   hence the function name.
+// "Forcing" something through a power queue can only be done if the worker is not using the power queue in any
+//   other way, and the worker is only forcing one thing through the power queue at a time.
+bool powerQueueForce(POWER_QUEUE_TYPE type, BASE_OBJECT* worker, void* workSubject, int price)
+{
+	// can we start now?
+	POWER_QUEUE* queue = powerQueueNext(type, worker);
+	if (!queue || (BASE_STATS*)queue->workSubject != workSubject)
+	{
+		// What we're currently building isn't in the power queue yet. Put it in, and start
+		// next update.
+		if (queue)
+		{
+			powerQueueCancelWorker(worker);
+		}
+		if (!workSubject)
+		{
+			// we're just clearing the power queue.
+			return false;
+		}
+		queue = powerQueueAdd(type, worker, workSubject, price);
+	}
+	if (queue->ready && powerQueueAccept(queue))
+	{
+		// okay, we're good
+		return true;
+	}
+	else
+	{
+		// not enough power to start; workers still on strike.
+		return false;
+	}
 }
 

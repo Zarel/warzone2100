@@ -1095,14 +1095,14 @@ static void structureSaveTagged(STRUCTURE *psStruct)
 			tagWrite(0x02, psFactory->quantity);
 			tagWrite(0x03, psFactory->loopsPerformed);
 			//tagWrite(0x04, psFactory->productionOutput); // not used in original code, recalculated instead
-			tagWrite(0x05, psFactory->powerAccrued);
+			tagWrite(0x05, psFactory->workStarted);
 			if (psFactory->psSubject)
 			{
 				tagWrites(0x06, ((DROID_TEMPLATE *)psFactory->psSubject)->multiPlayerID);
 			}
-			tagWrite(0x07, psFactory->timeStarted);
-			tagWrite(0x08, psFactory->timeToBuild);
-			tagWrite(0x09, psFactory->timeStartHold);
+			tagWrite(0x07, psFactory->workLastUpdated);
+			tagWrite(0x08, psFactory->workProgress);
+			tagWrite(0x09, psFactory->workOnHold);
 			tagWrite(0x0a, psFactory->secondaryOrder);
 			if (psFactory->psAssemblyPoint)
 			{
@@ -1122,12 +1122,12 @@ static void structureSaveTagged(STRUCTURE *psStruct)
 
 			tagWriteEnter(0x0e, 1);
 			tagWrite(0x01, psResearch->capacity); // number of upgrades it has
-			tagWrite(0x02, psResearch->powerAccrued);
-			tagWrite(0x03, psResearch->timeStartHold);
+			tagWrite(0x02, psResearch->workStarted);
+			tagWrite(0x03, psResearch->workOnHold);
 			if (psResearch->psSubject)
 			{
 				tagWrite(0x04, psResearch->psSubject->ref - REF_RESEARCH_START);
-				tagWrite(0x05, psResearch->timeStarted);
+				tagWrite(0x05, psResearch->workLastUpdated);
 			}
 			tagWriteLeave(0x0e);
 		} break;

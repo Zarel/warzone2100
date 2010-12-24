@@ -2836,6 +2836,7 @@ static void intProcessStats(UDWORD id)
 				        {
 					        //init the factory production
 					        psFactory->psSubject = NULL;
+							powerQueueCancelWorker(psObjSelected);
 					        //check to see if anything left to produce
 					        psNext = factoryProdUpdate((STRUCTURE *)psObjSelected, NULL);
 					        if (psNext == NULL)
@@ -6227,6 +6228,7 @@ static BOOL setResearchStats(BASE_OBJECT *psObj, BASE_STATS *psStats)
 
 	psResFacilty = (RESEARCH_FACILITY*)psBuilding->pFunctionality;
 	//initialise the subject
+	powerQueueCancelWorker(psObj);
 	psResFacilty->psSubject = NULL;
 
 	//set up the player_research
@@ -6238,44 +6240,25 @@ static BOOL setResearchStats(BASE_OBJECT *psObj, BASE_STATS *psStats)
 		//meant to still be in the list but greyed out
 		pPlayerRes = asPlayerResList[selectedPlayer] + count;
 
-		/*subtract the power required to research*/
-		/*if (pPlayerRes->researched != CANCELLED_RESEARCH)
-		{
-			if (!usePower(selectedPlayer, pResearch->researchPower))
-			{
-				addConsoleMessage("Research: No Power",DEFAULT_JUSTIFY,SYSTEM_MESSAGE);
-				return false;
-			}
-		}*/
-
 		//set the subject up
 		psResFacilty->psSubject = psStats;
 
 		if (IsResearchCancelled(pPlayerRes))
 		{
-			//set up as if all power available for cancelled topics
-			psResFacilty->powerAccrued = pResearch->researchPower;
+			psResFacilty->workStarted = true;
+			psResFacilty->workProgress = pPlayerRes->currentPoints;
 		}
 		else
 		{
-			psResFacilty->powerAccrued = 0;
+			psResFacilty->workStarted = false;
+			psResFacilty->workProgress = 0;
 		}
 
 		sendReseachStatus(psBuilding,count,selectedPlayer,true);	// inform others, I'm researching this.
 
 		MakeResearchStarted(pPlayerRes);
-		//psResFacilty->timeStarted = gameTime;
-		psResFacilty->timeStarted = ACTION_START_TIME;
-        psResFacilty->timeStartHold = 0;
-        //this is no longer used...AB 30/06/99
-		psResFacilty->timeToResearch = pResearch->researchPoints /
-			psResFacilty->researchPoints;
-		//check for zero research time - usually caused by 'silly' data!
-		if (psResFacilty->timeToResearch == 0)
-		{
-			//set to 1/1000th sec - ie very fast!
-			psResFacilty->timeToResearch = 1;
-		}
+        psResFacilty->workOnHold = false;
+		psResFacilty->workRequired = -1;
 		//stop the button from flashing once a topic has been chosen
 		stopReticuleButtonFlash(IDRET_RESEARCH);
 	}
@@ -6390,17 +6373,15 @@ static BOOL setManufactureStats(BASE_OBJECT *psObj, BASE_STATS *psStats)
 
 	} else {
 		// Stop manufacturing.
-		//return half the power cost if cancelled mid production
-		if (((FACTORY*)Structure->pFunctionality)->timeStarted != ACTION_START_TIME)
+		FACTORY* psFactory = StructureGetFactory(Structure);
+		// give back the power cost of the unit
+		if (psFactory->workStarted)
 		{
-			if (((FACTORY*)Structure->pFunctionality)->psSubject != NULL)
-			{
-				addPower(Structure->player, ((DROID_TEMPLATE *)((FACTORY*)Structure->
-					pFunctionality)->psSubject)->powerPoints / 2);
-			}
+			addPower(psBuilding->player, ((DROID_TEMPLATE *)psFactory->psSubject)->powerPoints);
 		}
-		((FACTORY*)Structure->pFunctionality)->quantity = 0;
-		((FACTORY*)Structure->pFunctionality)->psSubject = NULL;
+		psFactory->quantity = 0;
+		psFactory->psSubject = NULL;
+		powerQueueCancelWorker(Structure);
 		intManufactureFinished(Structure);
 	}
 #endif
@@ -6413,6 +6394,11 @@ static BOOL setManufactureStats(BASE_OBJECT *psObj, BASE_STATS *psStats)
 /* If psSelected != NULL it specifies which droid should be hilited */
 static BOOL intAddBuild(DROID *psSelected)
 {
+	if (psSelected && mouseDClicked(MOUSE_LMB))
+	{
+		powerQueueMoveToFront(powerQueueNext(PQ_BUILD, (BASE_OBJECT *)psSelected));
+	}
+
 	/* Store the correct stats list for future reference */
 	ppsStatsList = (BASE_STATS **)apsStructStatsList;
 
@@ -6434,6 +6420,11 @@ static BOOL intAddBuild(DROID *psSelected)
 /* If psSelected != NULL it specifies which factory should be hilited */
 static BOOL intAddManufacture(STRUCTURE *psSelected)
 {
+	if (psSelected && mouseDClicked(MOUSE_LMB))
+	{
+		powerQueueMoveToFront(powerQueueNext(PQ_MANUFACTURE, (BASE_OBJECT *)psSelected));
+	}
+
 	/* Store the correct stats list for future reference */
 	ppsStatsList = (BASE_STATS**)apsTemplateList;
 
@@ -6456,6 +6447,11 @@ static BOOL intAddManufacture(STRUCTURE *psSelected)
 /* If psSelected != NULL it specifies which droid should be hilited */
 static BOOL intAddResearch(STRUCTURE *psSelected)
 {
+	if (psSelected && mouseDClicked(MOUSE_LMB))
+	{
+		powerQueueMoveToFront(powerQueueNext(PQ_RESEARCH, (BASE_OBJECT *)psSelected));
+	}
+
 	ppsStatsList = (BASE_STATS **)ppResearchList;
 
 	objSelectFunc = selectResearch;
@@ -6528,6 +6524,7 @@ static void intStatsRMBPressed(UDWORD id)
 		        {
 			        //init the factory production
 			        psFactory->psSubject = NULL;
+					powerQueueCancelWorker((BASE_OBJECT *)psFactory);
 			        //check to see if anything left to produce
 			        psNext = factoryProdUpdate((STRUCTURE *)psObjSelected, NULL);
 			        if (psNext == NULL)
@@ -6644,7 +6641,7 @@ static void intObjStatRMBPressed(UDWORD id)
 				if (((FACTORY *)psStructure->pFunctionality)->psSubject)
 				{
 					//if not curently on hold, set it
-					if (((FACTORY *)psStructure->pFunctionality)->timeStartHold == 0)
+					if (!((FACTORY *)psStructure->pFunctionality)->workOnHold)
 					{
 						holdProduction(psStructure);
 					}
@@ -6663,7 +6660,7 @@ static void intObjStatRMBPressed(UDWORD id)
 				if (((RESEARCH_FACILITY *)psStructure->pFunctionality)->psSubject)
 				{
 					//if not curently on hold, set it
-					if (((RESEARCH_FACILITY *)psStructure->pFunctionality)->timeStartHold == 0)
+					if (!((RESEARCH_FACILITY *)psStructure->pFunctionality)->workOnHold)
 					{
 						holdResearch(psStructure);
 					}

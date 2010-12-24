@@ -176,7 +176,6 @@ void intUpdateProgressBar(WIDGET *psWidget, W_CONTEXT *psContext)
 		case OBJ_DROID:						// If it's a droid and...
 			Droid = (DROID*)psObj;
 
-
 			if(DroidIsBuilding(Droid))  // Is it a building.
 			{
 				ASSERT(Droid->asBits[COMP_CONSTRUCT].nStat, "intUpdateProgressBar: invalid droid type" );
@@ -214,88 +213,76 @@ void intUpdateProgressBar(WIDGET *psWidget, W_CONTEXT *psContext)
 		case OBJ_STRUCTURE:					// If it's a structure and...
 			Structure = (STRUCTURE*)psObj;
 
-			if(StructureIsManufacturing(Structure)) {			// Is it manufacturing.
+			if (StructureIsManufacturing(Structure))
+			{
+				// Manufacturing
+
 				Manufacture = StructureGetFactory(Structure);
-
-				Range = ((DROID_TEMPLATE*)Manufacture->psSubject)->buildPoints/(float)Manufacture->productionOutput;
-				BuildPoints = Range - Manufacture->timeToBuild;
-				//set the colour of the bar to yellow
-				BarGraph->majorCol = WZCOL_YELLOW;
-				//and change the tool tip
-				widgSetTipText((WIDGET*)BarGraph, _("Construction Progress"));
-
-				if((int) BuildPoints < 0){
-					BuildPoints=0;
+				if (!Manufacture->workStarted)
+				{
+					Range = 100;
+					BuildPoints = powerQueueProgress((BASE_OBJECT *)Structure);
+					BarGraph->majorCol = WZCOL_GREEN;
+					if (BuildPoints == 0)
+					{
+						BarGraph->majorCol = WZCOL_GREY;
+						BuildPoints = 100;
+					}
+					widgSetTipText((WIDGET*)BarGraph, _("Waiting for power"));
 				}
-				else if (BuildPoints > Range)
+				else
+				{
+					Range = (Manufacture->workRequired ? Manufacture->workRequired : 1);
+					BuildPoints = Manufacture->workProgress;
+					BarGraph->majorCol = WZCOL_YELLOW;
+					widgSetTipText((WIDGET*)BarGraph, _("Manufacturing unit"));
+				}
+
+				if (BuildPoints > Range) // overflow
 				{
 					BuildPoints = Range;
-				}
-				// prevent a division by 0 error
-				if (Range == 0)
-				{
-					Range = 1;
 				}
 				BarGraph->majorSize = (UWORD)PERNUM(WBAR_SCALE,BuildPoints,Range);
 				BarGraph->style &= ~WIDG_HIDDEN;
 			}
-			else if(StructureIsResearching(Structure))  // Is it researching.
+			else if (StructureIsResearching(Structure))
 			{
+				// Researching
+
 				Research = StructureGetResearch(Structure);
 				pPlayerRes = asPlayerResList[selectedPlayer] +
 				             ((RESEARCH *)Research->psSubject - asResearch);
-				//this is no good if you change which lab is researching the topic and one lab is faster
-				//Range = Research->timeToResearch;
-				Range = ((RESEARCH *)((RESEARCH_FACILITY*)Structure->pFunctionality)->psSubject)->researchPoints;
 				//check started to research
-				if (Research->timeStarted == ACTION_START_TIME)
+				if (!Research->workStarted)
 				{
-					//BuildPoints = 0;
-					//if not started building show how much power accrued
-					Range = ((RESEARCH *)Research->psSubject)->researchPower;
-					BuildPoints = Research->powerAccrued;
-					//set the colour of the bar to green
+					// waiting for power
+					Range = 100;
+					BuildPoints = powerQueueProgress((BASE_OBJECT *)Structure);
 					BarGraph->majorCol = WZCOL_GREEN;
-					//and change the tool tip
-					widgSetTipText((WIDGET*)BarGraph, _("Power Accrued"));
+					if (BuildPoints == 0)
+					{
+						BarGraph->majorCol = WZCOL_GREY;
+						BuildPoints = 100;
+					}
+					widgSetTipText((WIDGET*)BarGraph, _("Waiting for power"));
 				}
 				else
 				{
-					//set the colour of the bar to yellow
+					Range = (Research->workRequired ? Research->workRequired : 1);
+					BuildPoints = Research->workProgress;
 					BarGraph->majorCol = WZCOL_YELLOW;
-					//and change the tool tip
-					widgSetTipText((WIDGET*)BarGraph, _("Progress Bar"));
-					//if on hold need to take it into account
-					if (Research->timeStartHold)
-					{
-
-						BuildPoints = ((RESEARCH_FACILITY*)Structure->pFunctionality)->
-						researchPoints * (gameTime - (Research->timeStarted + (
-						gameTime - Research->timeStartHold))) / GAME_TICKS_PER_SEC;
-
-						BuildPoints+= pPlayerRes->currentPoints;
-					}
-					else
-					{
-
-						BuildPoints = ((RESEARCH_FACILITY*)Structure->pFunctionality)->
-						researchPoints * (gameTime - Research->timeStarted) / GAME_TICKS_PER_SEC;
-
-						BuildPoints+= pPlayerRes->currentPoints;
-					}
+					widgSetTipText((WIDGET*)BarGraph, _("Researching"));
 				}
-				if (BuildPoints > Range)
+
+				if (BuildPoints > Range) // overflow
 				{
 					BuildPoints = Range;
 				}
-				// prevent a division by 0 error
-				if (Range == 0)
-				{
-					Range = 1;
-				}
 				BarGraph->majorSize = (UWORD)PERNUM(WBAR_SCALE,BuildPoints,Range);
 				BarGraph->style &= ~WIDG_HIDDEN;
-			} else {
+			}
+			else
+			{
 				BarGraph->majorSize = 0;
 				BarGraph->style |= WIDG_HIDDEN;
 			}
@@ -580,14 +567,14 @@ void intDisplayPowerBar(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset, WZ_DEC
 	SDWORD		iX,iY;
 	static char		szVal[8];
 
-	ManPow = ManuPower / POWERBAR_SCALE;
+	ManPow = (ManuPower+getQueuedPower(selectedPlayer)) / POWERBAR_SCALE;
 	Avail = getPower(selectedPlayer) / POWERBAR_SCALE;
-	realPower = getPower(selectedPlayer) - ManuPower;
+	realPower = getPower(selectedPlayer) - ManuPower - getQueuedPower(selectedPlayer);
 
 	BarWidth = BarGraph->width;
 	iV_SetFont(font_regular);
-	sprintf( szVal, "%d", realPower );
-	textWidth = iV_GetTextWidth( szVal );
+	sprintf(szVal, "%d", realPower+ManuPower);
+	textWidth = iV_GetTextWidth(szVal) + 3;
 	BarWidth -= textWidth;
 
 	if (ManPow > Avail)
@@ -639,32 +626,27 @@ void intDisplayPowerBar(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset, WZ_DEC
 	//draw required section
 	if (ManPow > Avail)
 	{
-		//draw the required in red
+		iV_DrawImageRect(IntImages,IMAGE_PBAR_REQUIRED,
+		                 x0,y0,
+		                 Avail, iV_GetImageHeight(IntImages,IMAGE_PBAR_REQUIRED));
 		iV_DrawImageRect(IntImages,IMAGE_PBAR_USED,
-							x0,y0,
-							ManPow, iV_GetImageHeight(IntImages,IMAGE_PBAR_USED));
+		                 x0+Avail,y0,
+		                 ManPow-Avail, iV_GetImageHeight(IntImages,IMAGE_PBAR_USED));
+		x0 += ManPow;
 	}
 	else
 	{
 		iV_DrawImageRect(IntImages,IMAGE_PBAR_REQUIRED,
-							x0,y0,
-							ManPow, iV_GetImageHeight(IntImages,IMAGE_PBAR_REQUIRED));
-	}
-
-	x0 += ManPow;
-
-	//draw the available section if any!
-	if(Avail-ManPow > 0)
-	{
+		                 x0,y0,
+		                 ManPow, iV_GetImageHeight(IntImages,IMAGE_PBAR_REQUIRED));
 		iV_DrawImageRect(IntImages,IMAGE_PBAR_AVAIL,
-							x0,y0,
-							Avail-ManPow, iV_GetImageHeight(IntImages,IMAGE_PBAR_AVAIL));
-
-		x0 += Avail-ManPow;
+		                 x0+ManPow,y0,
+		                 Avail-ManPow, iV_GetImageHeight(IntImages,IMAGE_PBAR_AVAIL));
+		x0 += Avail;
 	}
 
 	//fill in the rest with empty section
-	if(Empty > 0)
+	if (Empty > 0)
 	{
 		iV_DrawImageRect(IntImages,IMAGE_PBAR_EMPTY,
 							x0,y0,
@@ -676,7 +658,20 @@ void intDisplayPowerBar(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset, WZ_DEC
 
 	/* draw text value */
 	iV_SetTextColour(WZCOL_TEXT_BRIGHT);
-	iV_DrawText( szVal, iX, iY );
+	iV_DrawText( szVal, iX, iY+1 );
+
+	/* draw selected cost */
+	if (ManuPower)
+	{
+		sprintf(szVal, "-%d", ManuPower);
+		textWidth = iV_GetTextWidth(szVal) + 3;
+		iV_DrawImage(IntImages,IMAGE_PBAR_TOP,iX-3,iY+6);
+		iV_DrawImageRect(IntImages,IMAGE_PBAR_EMPTY,
+						 iX,y0+15,
+						 textWidth, iV_GetImageHeight(IntImages,IMAGE_PBAR_EMPTY));
+		iV_DrawImage(IntImages,IMAGE_PBAR_BOTTOM,iX+textWidth,iY+6);
+		iV_DrawText( szVal, iX, iY+16 );
+	}
 }
 
 
@@ -775,10 +770,7 @@ void intDisplayStatusButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset, WZ
 								IMDType = IMDTYPE_DROIDTEMPLATE;
 								Object = (void*)FactoryGetTemplate(StructureGetFactory(Structure));
 								RENDERBUTTON_INITIALISED(Buffer);
-								if (StructureGetFactory(Structure)->timeStartHold)
-								{
-									bOnHold = true;
-								}
+								bOnHold = StructureGetFactory(Structure)->workOnHold;
 							}
 
 							break;
@@ -792,10 +784,7 @@ void intDisplayStatusButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset, WZ
 								{
 									break;
 								}
-	    							if (((RESEARCH_FACILITY *)Structure->pFunctionality)->timeStartHold)
-		    						{
-			    						bOnHold = true;
-				    				}
+								bOnHold = StructureGetResearch(Structure)->workOnHold;
 								StatGetResearchImage(Stats,&Image,&shape, &psResGraphic, false);
 								Object = shape;
 								if (psResGraphic)

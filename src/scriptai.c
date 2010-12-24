@@ -1669,21 +1669,17 @@ BOOL scrSkDoResearch(void)
 
 		if (IsResearchCancelled(pPlayerRes))
 		{
-			psResFacilty->powerAccrued = pResearch->researchPower;//set up as if all power available for cancelled topics
+			psResFacilty->workStarted = true;//set up as if all power available for cancelled topics
+			psResFacilty->workProgress = pPlayerRes->currentPoints;
 		}
 		else
 		{
-			psResFacilty->powerAccrued = 0;
+			psResFacilty->workStarted = false;
+			psResFacilty->workProgress = 0;
 		}
 
 		MakeResearchStarted(pPlayerRes);
-		psResFacilty->timeStarted = ACTION_START_TIME;
-		psResFacilty->timeStartHold = 0;
-		psResFacilty->timeToResearch = pResearch->researchPoints / 	psResFacilty->researchPoints;
-		if (psResFacilty->timeToResearch == 0)
-		{
-			psResFacilty->timeToResearch = 1;
-		}
+		psResFacilty->workOnHold = false;
 #if defined (DEBUG)
 		{
 			char				sTemp[128];

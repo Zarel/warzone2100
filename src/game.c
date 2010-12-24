@@ -7031,15 +7031,15 @@ BOOL loadSaveStructureV7(char *pFileData, UDWORD filesize, UDWORD numStructures)
 					psSaveStructure->capacity;
 				((RESEARCH_FACILITY *)psStructure->pFunctionality)->researchPoints =
 					psSaveStructure->output;
-				((RESEARCH_FACILITY *)psStructure->pFunctionality)->timeStarted = (psSaveStructure->timeStarted);
+				((RESEARCH_FACILITY *)psStructure->pFunctionality)->workProgress = (psSaveStructure->timeStarted);
 				if (psSaveStructure->subjectInc != (UDWORD)-1)
 				{
 					((RESEARCH_FACILITY *)psStructure->pFunctionality)->psSubject = (BASE_STATS *)
 						(asResearch + psSaveStructure->subjectInc);
-					((RESEARCH_FACILITY*)psStructure->pFunctionality)->timeToResearch =
-						(asResearch + psSaveStructure->subjectInc)->researchPoints /
-						((RESEARCH_FACILITY *)psStructure->pFunctionality)->
-						researchPoints;
+					((RESEARCH_FACILITY*)psStructure->pFunctionality)->workStarted = (psSaveStructure->timeStarted != -1);
+					((RESEARCH_FACILITY*)psStructure->pFunctionality)->workRequired =
+						(asResearch + psSaveStructure->subjectInc)->researchPoints;
+					((RESEARCH_FACILITY*)psStructure->pFunctionality)->workLastUpdated = gameTime;
 				}
 				//adjust the module structures IMD
 				if (psSaveStructure->capacity)
@@ -7313,11 +7313,12 @@ BOOL loadSaveStructureV19(char *pFileData, UDWORD filesize, UDWORD numStructures
 					psFactory->capacity = 0;//capacity reset during module build (UBYTE)psSaveStructure->capacity;
                     //this is set up during module build - if the stats have changed it will also set up with the latest value
 					//psFactory->productionOutput = (UBYTE)psSaveStructure->output;
-					psFactory->quantity = (UBYTE)psSaveStructure->quantity;
-					psFactory->timeStarted = psSaveStructure->droidTimeStarted;
-					psFactory->powerAccrued = psSaveStructure->powerAccrued;
-					psFactory->timeToBuild = psSaveStructure->timeToBuild;
-					psFactory->timeStartHold = psSaveStructure->timeStartHold;
+					psFactory->quantity = (uint8_t)psSaveStructure->quantity;
+					psFactory->workLastUpdated = gameTime;
+					psFactory->workStarted = psSaveStructure->powerAccrued;
+					psFactory->workProgress = psSaveStructure->timeToBuild;
+					psFactory->workOnHold = psSaveStructure->timeStartHold;
+					psFactory->workRequired = -1;
 
 					//adjust the module structures IMD
 					if (psSaveStructure->capacity)
@@ -7349,14 +7350,6 @@ BOOL loadSaveStructureV19(char *pFileData, UDWORD filesize, UDWORD numStructures
 					{
 						psFactory->psSubject = (BASE_STATS*)
                             getTemplateFromMultiPlayerID(psSaveStructure->subjectInc);
-                        //if the build has started set the powerAccrued =
-                        //powerRequired to sync the interface
-                        if (psFactory->timeStarted != ACTION_START_TIME &&
-                            psFactory->psSubject)
-                        {
-                            psFactory->powerAccrued = ((DROID_TEMPLATE *)psFactory->
-                                psSubject)->powerPoints;
-                        }
 					}
 				}
 				break;
@@ -7365,11 +7358,12 @@ BOOL loadSaveStructureV19(char *pFileData, UDWORD filesize, UDWORD numStructures
 				psResearch->capacity = 0;//capacity set when module loaded psSaveStructure->capacity;
                 //this is set up during module build - if the stats have changed it will also set up with the latest value
                 //psResearch->researchPoints = psSaveStructure->output;
-				psResearch->powerAccrued = psSaveStructure->powerAccrued;
+				psResearch->workStarted = psSaveStructure->powerAccrued;
 				//clear subject
 				psResearch->psSubject = NULL;
-				psResearch->timeToResearch = 0;
-				psResearch->timeStarted = 0;
+				psResearch->workProgress = 0;
+				psResearch->workRequired = -1;
+				psResearch->workLastUpdated = gameTime;
 				//set the subject
 				if (saveGameVersion >= VERSION_15)
 				{
@@ -7379,34 +7373,20 @@ BOOL loadSaveStructureV19(char *pFileData, UDWORD filesize, UDWORD numStructures
 						if (researchId != NULL_ID)
 						{
 							psResearch->psSubject = (BASE_STATS *)(asResearch + researchId);
-							psResearch->timeToResearch = (asResearch + researchId)->researchPoints / psResearch->researchPoints;
-							psResearch->timeStarted = psSaveStructure->timeStarted;
 						}
 					}
 					else
 					{
 						psResearch->psSubject = NULL;
-						psResearch->timeToResearch = 0;
-						psResearch->timeStarted = 0;
 					}
 				}
 				else
 				{
-					psResearch->timeStarted = (psSaveStructure->timeStarted);
 					if (psSaveStructure->subjectInc != NULL_ID)
 					{
 						psResearch->psSubject = (BASE_STATS *)(asResearch + psSaveStructure->subjectInc);
-						psResearch->timeToResearch = (asResearch + psSaveStructure->subjectInc)->researchPoints / psResearch->researchPoints;
 					}
-
 				}
-                //if started research, set powerAccrued = powerRequired
-                if (psResearch->timeStarted != ACTION_START_TIME && psResearch->
-                    psSubject)
-                {
-                    psResearch->powerAccrued = ((RESEARCH *)psResearch->
-                        psSubject)->researchPower;
-                }
 				//adjust the module structures IMD
 				if (psSaveStructure->capacity)
 				{
@@ -7722,10 +7702,10 @@ BOOL loadSaveStructureV(char *pFileData, UDWORD filesize, UDWORD numStructures, 
 				//this is set up during module build - if the stats have changed it will also set up with the latest value
 				//psFactory->productionOutput = (UBYTE)psSaveStructure->output;
 				psFactory->quantity = (UBYTE)psSaveStructure->quantity;
-				psFactory->timeStarted = psSaveStructure->droidTimeStarted;
-				psFactory->powerAccrued = psSaveStructure->powerAccrued;
-				psFactory->timeToBuild = psSaveStructure->timeToBuild;
-				psFactory->timeStartHold = psSaveStructure->timeStartHold;
+				psFactory->workLastUpdated = gameTime;
+				psFactory->workStarted = psSaveStructure->powerAccrued;
+				psFactory->workProgress = psSaveStructure->timeToBuild;
+				psFactory->workOnHold = psSaveStructure->timeStartHold;
 
 				//adjust the module structures IMD
 				if (psSaveStructure->capacity)
@@ -7756,14 +7736,6 @@ BOOL loadSaveStructureV(char *pFileData, UDWORD filesize, UDWORD numStructures, 
 				{
 					psFactory->psSubject = (BASE_STATS*)
                         getTemplateFromMultiPlayerID(psSaveStructure->subjectInc);
-                    //if the build has started set the powerAccrued =
-                    //powerRequired to sync the interface
-                    if (psFactory->timeStarted != ACTION_START_TIME &&
-                        psFactory->psSubject)
-                    {
-                        psFactory->powerAccrued = ((DROID_TEMPLATE *)psFactory->
-                            psSubject)->powerPoints;
-                    }
 				}
 				if (version >= VERSION_21)//version 21
 				{
@@ -7788,12 +7760,13 @@ BOOL loadSaveStructureV(char *pFileData, UDWORD filesize, UDWORD numStructures, 
 					buildStructure(psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 				}
 				//this is set up during module build - if the stats have changed it will also set up with the latest value
-				psResearch->powerAccrued = psSaveStructure->powerAccrued;
+				psResearch->workStarted = psSaveStructure->powerAccrued;
 				//clear subject
 				psResearch->psSubject = NULL;
-				psResearch->timeToResearch = 0;
-				psResearch->timeStarted = 0;
-				psResearch->timeStartHold = 0;
+				psResearch->workProgress = 0;
+				psResearch->workRequired = -1;
+				psResearch->workLastUpdated = gameTime;
+				psResearch->workOnHold = false;
 				//set the subject
 				if (psSaveStructure->subjectInc != NULL_ID)
 				{
@@ -7801,21 +7774,13 @@ BOOL loadSaveStructureV(char *pFileData, UDWORD filesize, UDWORD numStructures, 
 					if (researchId != NULL_ID)
 					{
 						psResearch->psSubject = (BASE_STATS *)(asResearch + researchId);
-						psResearch->timeToResearch = (asResearch + researchId)->researchPoints / psResearch->researchPoints;
-						psResearch->timeStarted = psSaveStructure->timeStarted;
+						psResearch->workLastUpdated = gameTime;
 						if (saveGameVersion >= VERSION_20)
 						{
-							psResearch->timeStartHold = psSaveStructure->timeStartHold;
+							psResearch->workOnHold = psSaveStructure->timeStartHold;
 						}
 					}
 				}
-                //if started research, set powerAccrued = powerRequired
-                if (psResearch->timeStarted != ACTION_START_TIME && psResearch->
-                    psSubject)
-                {
-                    psResearch->powerAccrued = ((RESEARCH *)psResearch->
-                        psSubject)->researchPower;
-                }
 				break;
 			case REF_POWER_GEN:
 				//adjust the module structures IMD
@@ -8049,10 +8014,10 @@ BOOL writeStructFile(char *pFileName)
 					psFactory = ((FACTORY *)psCurr->pFunctionality);
 					psSaveStruct->capacity	= psFactory->capacity;
 					psSaveStruct->quantity			= psFactory->quantity;
-					psSaveStruct->droidTimeStarted	= psFactory->timeStarted;
-					psSaveStruct->powerAccrued		= psFactory->powerAccrued;
-					psSaveStruct->timeToBuild		= psFactory->timeToBuild;
-					psSaveStruct->timeStartHold		= psFactory->timeStartHold;
+					psSaveStruct->droidTimeStarted	= psFactory->workLastUpdated;
+					psSaveStruct->powerAccrued		= psFactory->workStarted;
+					psSaveStruct->timeToBuild		= psFactory->workProgress;
+					psSaveStruct->timeStartHold		= psFactory->workOnHold;
 
     				if (psFactory->psSubject != NULL)
 					{
@@ -8090,9 +8055,9 @@ BOOL writeStructFile(char *pFileName)
 					psSaveStruct->capacity = ((RESEARCH_FACILITY *)psCurr->
 						pFunctionality)->capacity;
 					psSaveStruct->powerAccrued = ((RESEARCH_FACILITY *)psCurr->
-						pFunctionality)->powerAccrued;
+						pFunctionality)->workStarted;
 					psSaveStruct->timeStartHold	= ((RESEARCH_FACILITY *)psCurr->
-						pFunctionality)->timeStartHold;
+						pFunctionality)->workOnHold;
 					if (((RESEARCH_FACILITY *)psCurr->pFunctionality)->psSubject)
 					{
 						psSaveStruct->subjectInc = 0;
@@ -8101,7 +8066,7 @@ BOOL writeStructFile(char *pFileName)
 						ASSERT(strlen(asResearch[researchId].pName) < sizeof(psSaveStruct->researchName), "writeStructData: research name too long");
 						sstrcpy(psSaveStruct->researchName, asResearch[researchId].pName);
 						psSaveStruct->timeStarted = ((RESEARCH_FACILITY *)psCurr->
-							pFunctionality)->timeStarted;
+							pFunctionality)->workLastUpdated;
 					}
 					else
 					{

@@ -172,16 +172,18 @@ typedef enum _struct_states
 
 typedef struct _research_facility
 {
-	struct BASE_STATS	*psSubject;		/* the subject the structure is working on*/
 	UDWORD		capacity;				/* Number of upgrade modules added*/
-	UDWORD		timeStarted;			/* The time the building started on the subject*/
 	UDWORD		researchPoints;			/* Research Points produced per research cycle*/
-	UDWORD		timeToResearch;			/* Time taken to research the topic*/
 	struct BASE_STATS	*psBestTopic;	/* The topic with the most research points
 										   that was last performed*/
-	UDWORD		powerAccrued;			/* used to keep track of power before
-										   researching a topic*/
-	UDWORD		timeStartHold;		    /* The time the research facility was put on hold*/
+
+// what the research facility is working on
+	BASE_STATS*			psSubject;			/* the subject the structure is working on */
+	bool				workOnHold;			/* Are we on hold? */
+	bool				workStarted;		/* Have we paid for it yet? */
+	int32_t				workLastUpdated;	/* When we last updated */
+	int					workProgress;		/* How many research points we've done so far */
+	int					workRequired;		/* How many research points we have to finish */
 
 } RESEARCH_FACILITY;
 
@@ -190,19 +192,23 @@ typedef struct _factory
 
 	UBYTE				capacity;			/* The max size of body the factory
 											   can produce*/
-	UBYTE				quantity;			/* The number of droids to produce OR for
-											   selectedPlayer, how many loops to perform*/
 	UBYTE				loopsPerformed;		/* how many times the loop has been performed*/
 	//struct _propulsion_types*	propulsionType;
 	//UBYTE				propulsionType;		/* The type of propulsion the facility
 	//										   can produce*/
 	UBYTE				productionOutput;	/* Droid Build Points Produced Per
 											   Build Cycle*/
-	UDWORD				powerAccrued;		/* used to keep track of power before building a droid*/
-	BASE_STATS			*psSubject;			/* the subject the structure is working on */
-	UDWORD				timeStarted;		/* The time the building started on the subject*/
-	UDWORD				timeToBuild;		/* Time taken to build one droid */
-	UDWORD				timeStartHold;		/* The time the factory was put on hold*/
+
+// What the factory is working on.
+	BASE_STATS*			psSubject;			/* the subject the structure is working on */
+	UBYTE				quantity;			/* The number of droids to produce OR for
+											   selectedPlayer, how many loops to perform */
+	bool				workOnHold;			/* Are we on hold? */
+	bool				workStarted;		/* Have we paid for it yet? */
+	int32_t				workLastUpdated;	/* When we last updated */
+	int					workProgress;		/* How many build points we've done so far */
+	int					workRequired;		/* How many build points we have to finish */
+
 	FLAG_POSITION		*psAssemblyPoint;	/* Place for the new droids to assemble at */
 	struct DROID		*psCommander;	    // command droid to produce droids for (if any)
     UDWORD              secondaryOrder;     // secondary order state for all units coming out of the factory
@@ -302,6 +308,7 @@ typedef struct _structure
 
 	UDWORD          expectedDamage;                 ///< Expected damage to be caused by all currently incoming projectiles. This info is shared between all players,
 	                                                ///< but shouldn't make a difference unless 3 mutual enemies happen to be fighting each other at the same time.
+	struct _power_queue* cachedPowerQueue;          ///< Cache for fast power queue action!
 
 	uint32_t        prevTime;                       ///< Time of structure's previous tick.
 

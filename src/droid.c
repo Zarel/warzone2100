@@ -1062,7 +1062,7 @@ static void addConstructorEffect(STRUCTURE *psStruct)
    returns true while building continues */
 BOOL droidUpdateBuild(DROID *psDroid)
 {
-	UDWORD		pointsToAdd, constructPoints;
+	UDWORD		constructPoints;
 	STRUCTURE	*psStruct;
 
 	CHECK_DROID(psDroid);
@@ -1104,13 +1104,7 @@ BOOL droidUpdateBuild(DROID *psDroid)
 	constructPoints = constructorPoints(asConstructStats + psDroid->
 		asBits[COMP_CONSTRUCT].nStat, psDroid->player);
 
-	pointsToAdd = constructPoints * (gameTime - psDroid->actionStarted) /
-		GAME_TICKS_PER_SEC;
-
-	structureBuild(psStruct, psDroid, pointsToAdd - psDroid->actionPoints);
-
-	//store the amount just added
-	psDroid->actionPoints = pointsToAdd;
+	structureBuild(psStruct, psDroid, constructPoints);
 
 	addConstructorEffect(psStruct);
 
@@ -4595,14 +4589,14 @@ void deleteTemplateFromProduction(DROID_TEMPLATE *psTemplate, UBYTE player)
 					//not the production player, so check not being built in the factory for the template player
 					if (psFactory->psSubject == (BASE_STATS *)psTemplate)
 					{
+						// give back the power cost of the unit
+						if (psFactory->workStarted)
+						{
+							addPower(psStruct->player, ((DROID_TEMPLATE *)psFactory->psSubject)->powerPoints);
+						}
 						//clear the factories subject and quantity
 						psFactory->psSubject = NULL;
 						psFactory->quantity = 0;
-						//return any accrued power
-						if (psFactory->powerAccrued)
-						{
-							addPower(psStruct->player, psFactory->powerAccrued);
-						}
 						//tell the interface
 						intManufactureFinished(psStruct);
 					}

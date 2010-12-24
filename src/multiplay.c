@@ -972,27 +972,13 @@ BOOL recvResearchStatus()
 			pResearch				= asResearch + index;
 			psResFacilty->psSubject = (BASE_STATS *) pResearch;
 
-			// If they have previously started but cancelled there is no need to accure power
-			if (IsResearchCancelled(pPlayerRes))
-			{
-				psResFacilty->powerAccrued	= pResearch->researchPower;
-			}
-			else
-			{
-				psResFacilty->powerAccrued	= 0;
-			}
+			// If they have previously started but cancelled there is no need to accrue power
+			psResFacilty->workStarted		= IsResearchCancelled(pPlayerRes);
 
 			// Start the research
 			MakeResearchStarted(pPlayerRes);
-			psResFacilty->timeStarted		= ACTION_START_TIME;
-			psResFacilty->timeStartHold		= 0;
-			psResFacilty->timeToResearch	= pResearch->researchPoints / MAX(psResFacilty->researchPoints, 1);
-
-			// A failsafe of some sort
-			if (psResFacilty->timeToResearch == 0)
-			{
-				psResFacilty->timeToResearch = 1;
-			}
+			psResFacilty->workOnHold		= false;
+			psResFacilty->workProgress		= pPlayerRes->currentPoints;
 		}
 
 	}

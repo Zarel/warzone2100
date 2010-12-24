@@ -1102,8 +1102,8 @@ float getStructureDamage(const STRUCTURE* psStructure)
 void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints)
 {
 	int before, after;
-	int powerNeeded;
-	int buildPointsToAdd;
+	int powerNeeded = 0;
+	int buildPointsToAdd = 0;
 	int player;
 	int newBuildPoints = (int)psStruct->currentBuildPts; // beware, unsigned
 	DROID *psCurr;
@@ -1115,8 +1115,6 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints)
 	{
 		// Enemy structure
 		buildPoints = 0;
-		powerNeeded = 0;
-		buildPointsToAdd = 0;
 	}
 	else if (psStruct->pStructureType->type != REF_FACTORY_MODULE)
 	{
@@ -1129,8 +1127,6 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints)
 				 && !aiCheckAlliances(psStruct->player,psCurr->player))
 				{
 					buildPoints = 0;
-					powerNeeded = 0;
-					buildPointsToAdd = 0;
 					break;
 				}
 			}
@@ -1138,14 +1134,22 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints)
 	}
 	if (buildPoints > 0)
 	{
-		// Check if there is enough power to perform this construction work
-		powerNeeded = (newBuildPoints * structPowerToBuild(psStruct))/psStruct->pStructureType->buildPoints -
-		               (psStruct->currentBuildPts * structPowerToBuild(psStruct))/psStruct->pStructureType->buildPoints;
-		if (buildPoints > newBuildPoints - psStruct->currentBuildPts)
+		if (!psStruct->currentBuildPts)
 		{
-			buildPoints = newBuildPoints - psStruct->currentBuildPts + 1;
+			// can we start now?
+			if (powerQueueForce(PQ_BUILD, (BASE_OBJECT*)psStruct, (void*)psStruct, structPowerToBuild(psStruct)))
+			{
+				// okay, time to start!
+				psDroid->actionStarted = gameTime;
+				buildPointsToAdd = 1;
+			}
 		}
-		buildPointsToAdd = requestPowerFor(psStruct->player, powerNeeded, buildPoints);
+		else
+		{
+			buildPointsToAdd = buildPoints * gameTime / GAME_TICKS_PER_SEC -
+			                   buildPoints * psDroid->actionStarted / GAME_TICKS_PER_SEC;
+			psDroid->actionStarted = gameTime;
+		}
 	}
 	else
 	{
@@ -1166,6 +1170,14 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints)
 	psStruct->currentBuildPts = newBuildPoints;
 	after =  (9 * psStruct->currentBuildPts * structureBody(psStruct) ) / (10 * psStruct->pStructureType->buildPoints);
 	psStruct->body += after - before;
+	if (psStruct->body < 1)
+	{
+		psStruct->body = 1;
+	}
+	if (psStruct->body > structureBody(psStruct))
+	{
+		psStruct->body = structureBody(psStruct);
+	}
 
 	//check if structure is built
 	if (buildPoints > 0 && psStruct->currentBuildPts >= (SDWORD)psStruct->pStructureType->buildPoints)
@@ -1326,6 +1338,7 @@ BOOL structSetManufacture(STRUCTURE *psStruct, DROID_TEMPLATE *psTempl, UBYTE qu
 	                 (int)psStruct->pStructureType->type);
 	/* psTempl might be NULL if the build is being cancelled in the middle */
 
+
 	//assign it to the Factory
 	psFact = &psStruct->pFunctionality->factory;
 	psFact->psSubject = (BASE_STATS *)psTempl;
@@ -1340,17 +1353,9 @@ BOOL structSetManufacture(STRUCTURE *psStruct, DROID_TEMPLATE *psTempl, UBYTE qu
 			psFact->quantity = quantity;
 		}
 
-		psFact->timeStarted = ACTION_START_TIME;//gameTime;
-		psFact->powerAccrued = 0;
-		psFact->timeStartHold = 0;
-
-		psFact->timeToBuild = psTempl->buildPoints / psFact->productionOutput;
-		//check for zero build time - usually caused by 'silly' data!
-		if (psFact->timeToBuild == 0)
-		{
-			//set to 1/1000th sec - ie very fast!
-			psFact->timeToBuild = 1;
-		}
+		psFact->workStarted = false;
+		psFact->workProgress = 0;
+		psFact->workRequired = 0; // will be set when workStarted is set to true
 	}
 	return true;
 }
@@ -1859,6 +1864,7 @@ STRUCTURE* buildStructure(STRUCTURE_STATS* pStructureType, UDWORD x, UDWORD y, U
 
 		psBuilding->body = (UWORD)structureBody(psBuilding);
 		psBuilding->expectedDamage = 0;  // Begin life optimistically.
+		psBuilding->cachedPowerQueue = NULL;
 
 		//add the structure to the list - this enables it to be drawn whilst being built
 		addStructure(psBuilding);
@@ -2145,6 +2151,7 @@ static BOOL setFunctionality(STRUCTURE	*psBuilding, STRUCTURE_TYPE functionType)
 			psFactory->capacity = (UBYTE) ((PRODUCTION_FUNCTION*)psBuilding->pStructureType->asFuncList[0])->capacity;
 			psFactory->productionOutput = (UBYTE) ((PRODUCTION_FUNCTION*)psBuilding->pStructureType->asFuncList[0])->productionOutput;
 			psFactory->psSubject = NULL;
+			psFactory->workLastUpdated = gameTime;
 
 			// Default the secondary order - AB 22/04/99
 			psFactory->secondaryOrder = DSS_ARANGE_DEFAULT | DSS_REPLEV_NEVER
@@ -2189,6 +2196,8 @@ static BOOL setFunctionality(STRUCTURE	*psBuilding, STRUCTURE_TYPE functionType)
 			RESEARCH_FACILITY* psResFac = &psBuilding->pFunctionality->researchFacility;
 
 			psResFac->researchPoints = ((RESEARCH_FUNCTION *) psBuilding->pStructureType->asFuncList[0])->researchPoints;
+			psResFac->psSubject = NULL;
+			psResFac->workLastUpdated = gameTime;
 
 			// Take advantage of upgrades
 			structureResearchUpgrade(psBuilding);
@@ -2853,8 +2862,6 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 	DROID_TEMPLATE		*psNextTemplate;
 #endif
 	UDWORD				i;
-	float secondsToBuild, powerNeeded;
-	int secondsElapsed;
 	UWORD 				tmpOrigin = ORIGIN_UNKNOWN;
 
 	CHECK_STRUCTURE(psStructure);
@@ -3350,153 +3357,137 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 		//if subject is research...
 		if (structureMode == REF_RESEARCH)
 		{
+			bool workPaused = false;
 			psResFacility = &psStructure->pFunctionality->researchFacility;
-
-			//if on hold don't do anything
-			if (psResFacility->timeStartHold)
-			{
-				return;
-			}
-
-			//electronic warfare affects the functionality of some structures in multiPlayer
-			if (bMultiPlayer)
-			{
-				if (psStructure->resistance < (SWORD)structureResistance(psStructure->
-					pStructureType, psStructure->player))
-				{
-					return;
-				}
-			}
 
 			pPlayerRes += (pSubject->ref - REF_RESEARCH_START);
 			//check research has not already been completed by another structure
-			if (IsResearchCompleted(pPlayerRes)==0)
+			if (IsResearchCompleted(pPlayerRes))
 			{
-				pResearch = (RESEARCH *)pSubject;
-				// don't update if not responsible (106)
-				if(bMultiPlayer && !myResponsibility(psStructure->player))
-				{
-					return;
-				}
+				//cancel this Structure's research since it was completed (perhaps by someone else?)
+				psResFacility->psSubject = NULL;
+				intResearchFinished(psStructure);
+				return;
+			}
 
-				if (psResFacility->timeStarted == ACTION_START_TIME)
-				{
-					//set the time started
-					psResFacility->timeStarted = gameTime;
-				}
+			// if on hold, don't do anything
+			if (psResFacility->workOnHold)
+			{
+				workPaused = true;
+			}
 
-				ASSERT_OR_RETURN(, gameTime >= psResFacility->timeStarted, "research seems to have started in the future");
+			pResearch = (RESEARCH *)pSubject;
+			// don't update if not responsible (106)
+			if (bMultiPlayer && !myResponsibility(psStructure->player))
+			{
+				workPaused = true;
+			}
+
+			if (!workPaused && !psResFacility->workStarted)
+			{
+				// can we start now?
+				if (powerQueueForce(PQ_RESEARCH, (BASE_OBJECT*)psStructure, (void*)pSubject, pResearch->researchPower))
+				{
+					// okay, time to start!
+					psResFacility->workStarted = true;
+					psResFacility->workProgress = 0;
+					psResFacility->workRequired = pResearch->researchPoints;
+				}
+				else
+				{
+					workPaused = true;
+				}
+			}
+			if (psResFacility->workRequired == -1)
+			{
+				psResFacility->workRequired = pResearch->researchPoints;
+			}
+
+			if (!workPaused && psResFacility->workProgress < psResFacility->workRequired)
+			{
 				// formula written this way to prevent rounding error
 				pointsToAdd = (psResFacility->researchPoints * gameTime) / GAME_TICKS_PER_SEC -
-				              (psResFacility->researchPoints * psResFacility->timeStarted) / GAME_TICKS_PER_SEC;
-				pointsToAdd = MIN(pointsToAdd, pResearch->researchPoints - pPlayerRes->currentPoints);
+							  (psResFacility->researchPoints * psResFacility->workLastUpdated) / GAME_TICKS_PER_SEC;
+				psResFacility->workProgress += pointsToAdd;
+			}
 
-				if (pointsToAdd > 0 &&
-				    pResearch->researchPoints > 0) // might be a "free" research
+			//check if Research is complete
+			if (!workPaused && psResFacility->workProgress >= psResFacility->workRequired)
+			{
+				if(bMultiMessages)
 				{
-					float powerNeeded = (pResearch->researchPower * pointsToAdd) / (float)pResearch->researchPoints;
-					pPlayerRes->currentPoints += requestPowerFor(psStructure->player, powerNeeded, pointsToAdd);
-					psResFacility->timeStarted = gameTime;
+					SendResearch(psStructure->player, pSubject->ref - REF_RESEARCH_START, true);
 				}
 
-				//check if Research is complete
-				if (pPlayerRes->currentPoints >= pResearch->researchPoints)
+				//store the last topic researched - if its the best
+				if (psResFacility->psBestTopic == NULL)
 				{
-					if(bMultiMessages)
-					{
-						SendResearch(psStructure->player, pSubject->ref - REF_RESEARCH_START, true);
-					}
-
-					//store the last topic researched - if its the best
-					if (psResFacility->psBestTopic == NULL)
+					psResFacility->psBestTopic = psResFacility->psSubject;
+				}
+				else
+				{
+					if (pResearch->researchPoints >
+						((RESEARCH *)psResFacility->psBestTopic)->researchPoints)
 					{
 						psResFacility->psBestTopic = psResFacility->psSubject;
 					}
-					else
-					{
-						if (pResearch->researchPoints >
-							((RESEARCH *)psResFacility->psBestTopic)->researchPoints)
-						{
-							psResFacility->psBestTopic = psResFacility->psSubject;
-						}
-					}
-					psResFacility->psSubject = NULL;
-					intResearchFinished(psStructure);
-					researchResult(pSubject->ref - REF_RESEARCH_START, psStructure->player, true, psStructure, true);
-					//check if this result has enabled another topic
-					intCheckResearchButton();
 				}
-			}
-			else
-			{
-				//cancel this Structure's research since now complete
 				psResFacility->psSubject = NULL;
 				intResearchFinished(psStructure);
+				researchResult(pSubject->ref - REF_RESEARCH_START, psStructure->player, true, psStructure, true);
+				//check if this result has enabled another topic
+				intCheckResearchButton();
 			}
 		}
 		//check for manufacture
 		else if (structureMode == REF_FACTORY)
 		{
+			bool workPaused = false;
 			psFactory = &psStructure->pFunctionality->factory;
 			Quantity = psFactory->quantity;
 
-			//if on hold don't do anything
-			if (psFactory->timeStartHold)
+			// if on hold, don't do anything
+			if (psFactory->workOnHold)
 			{
-				return;
+				workPaused = true;
 			}
 
-			//electronic warfare affects the functionality of some structures in multiPlayer
-			if (bMultiPlayer)
+			if (!workPaused && !psFactory->workStarted)
 			{
-				if (psStructure->resistance < (SWORD)structureResistance(psStructure->
-					pStructureType, psStructure->player))
+				// can we start now?
+				if (powerQueueForce(PQ_MANUFACTURE, (BASE_OBJECT*)psStructure, (void*)pSubject, ((DROID_TEMPLATE *)pSubject)->powerPoints))
 				{
-					return;
+					// okay, time to start!
+					psFactory->workStarted = true;
+					psFactory->workProgress = 0;
+					psFactory->workRequired = ((DROID_TEMPLATE *)pSubject)->buildPoints;
 				}
-			}
-
-			if (psFactory->timeStarted == ACTION_START_TIME)
-			{
-				// also need to check if a command droid's group is full
-
-				// If the factory commanders group is full - return
-				if (IsFactoryCommanderGroupFull(psFactory))
+				else
 				{
-					return;
-				}
-
-				if(CheckHaltOnMaxUnitsReached(psStructure) == true) {
-					return;
+					workPaused = true;
 				}
 			}
-
-			/*must be enough power so subtract that required to build*/
-			if (psFactory->timeStarted == ACTION_START_TIME)
+			if (psFactory->workRequired == -1)
 			{
-				//set the time started
-				psFactory->timeStarted = gameTime;
+				psFactory->workRequired = ((DROID_TEMPLATE *)pSubject)->buildPoints;
 			}
 
-			if (psFactory->timeToBuild > 0)
+			if (!workPaused && psFactory->workProgress < psFactory->workRequired)
 			{
-				int progress;
-				secondsElapsed = (gameTime - psFactory->timeStarted) / (float)GAME_TICKS_PER_SEC;
-				secondsToBuild = ((DROID_TEMPLATE*)pSubject)->buildPoints/(float)psFactory->productionOutput;
-				powerNeeded = ((DROID_TEMPLATE *)pSubject)->powerPoints*(secondsElapsed/secondsToBuild);
-				if (secondsElapsed > 0)
-				{
-					progress = requestPowerFor(psStructure->player, powerNeeded, secondsElapsed);
-					psFactory->timeToBuild -= progress;
-					psFactory->timeStarted = psFactory->timeStarted + secondsElapsed*GAME_TICKS_PER_SEC;
-				}
+				int workToAdd = gameTime*psFactory->productionOutput/GAME_TICKS_PER_SEC
+				              - psFactory->workLastUpdated*psFactory->productionOutput/GAME_TICKS_PER_SEC;
+				psFactory->workProgress += workToAdd;
 			}
 
-			//check for manufacture to be complete
-			if ((psFactory->timeToBuild <= 0) &&
-				!IsFactoryCommanderGroupFull(psFactory) &&
-				!CheckHaltOnMaxUnitsReached(psStructure))
+			// we can't do stuff
+			if (IsFactoryCommanderGroupFull(psFactory) || CheckHaltOnMaxUnitsReached(psStructure))
 			{
+				workPaused = true;
+			}
+
+			if (!workPaused && psFactory->workProgress >= psFactory->workRequired)
+			{
+				// We're done!
 				if (isMission)
 				{
 					// put it in the mission list
@@ -3516,7 +3507,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 				}
 
 				//reset the start time
-				psFactory->timeStarted = ACTION_START_TIME;
+				psFactory->workStarted = false;
 
 				//next bit for productionPlayer only
 				if (productionPlayer == psStructure->player)
@@ -3813,6 +3804,14 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 				}
 			}
 		}
+	}
+	if (structureMode == REF_FACTORY)
+	{
+		StructureGetFactory(psStructure)->workLastUpdated = gameTime;
+	}
+	else if (structureMode == REF_RESEARCH)
+	{
+		StructureGetResearch(psStructure)->workLastUpdated = gameTime;
 	}
 }
 
@@ -6111,10 +6110,10 @@ void printStructureInfo(STRUCTURE *psStructure)
 #ifdef DEBUG
 		if (getDebugMappingStatus())
 		{
-			CONPRINTF(ConsoleString, (ConsoleString, "%s - Damage % 3.2f%% - Unique ID %u - Production Output: %u - TimeToBuild: %u",
+			CONPRINTF(ConsoleString, (ConsoleString, "%s - Damage % 3.2f%% - Unique ID %u - Production Output: %u - Progress: %u/%u",
 					  getStatName(psStructure->pStructureType), getStructureDamage(psStructure) * 100.f, psStructure->id,
 					  psStructure->pFunctionality->factory.productionOutput,
-					  psStructure->pFunctionality->factory.timeToBuild));
+					  StructureGetFactory(psStructure)->workProgress,StructureGetFactory(psStructure)->workRequired));
 		}
 		else
 #endif
@@ -6127,10 +6126,10 @@ void printStructureInfo(STRUCTURE *psStructure)
 #ifdef DEBUG
 		if (getDebugMappingStatus())
 		{
-			CONPRINTF(ConsoleString, (ConsoleString, "%s - Damage % 3.2f%% - Unique ID %u - Research Points: %u - TimeToResearch: %u",
+			CONPRINTF(ConsoleString, (ConsoleString, "%s - Damage % 3.2f%% - Unique ID %u - Research Points: %u - Progress: %u/%u",
 					  getStatName(psStructure->pStructureType), getStructureDamage(psStructure) * 100.f, psStructure->id,
 					  psStructure->pFunctionality->researchFacility.researchPoints,
-					  psStructure->pFunctionality->researchFacility.timeToResearch));
+					  StructureGetResearch(psStructure)->workProgress,StructureGetResearch(psStructure)->workRequired));
 		}
 		else
 #endif
@@ -6836,19 +6835,11 @@ void cancelProduction(STRUCTURE *psBuilding)
 	//check its the correct factory
 	if (psBuilding->player == productionPlayer && psFactory->psSubject)
 	{
-		// give the power back that was used until now
-		int secondsToBuild = ((DROID_TEMPLATE*)psFactory->psSubject)->buildPoints/psFactory->productionOutput;
-		int secondsElapsed = secondsToBuild - psFactory->timeToBuild;
-		int powerUsed = 0;
-		if (secondsElapsed > secondsToBuild) // can happen if factory's been upgraded since droid was created
+		// give back the power cost of the unit
+		if (psFactory->workStarted)
 		{
-			secondsElapsed = secondsToBuild;
+			addPower(psBuilding->player, ((DROID_TEMPLATE *)psFactory->psSubject)->powerPoints);
 		}
-		if (secondsElapsed > 0)
-		{
-			powerUsed = (int)(((DROID_TEMPLATE *)psFactory->psSubject)->powerPoints*secondsElapsed)/secondsToBuild;
-		}
-		addPower(psBuilding->player, powerUsed);
 
 		//clear the production run for this factory
 		memset(asProductionRun[psFactory->psAssemblyPoint->factoryType][
@@ -6856,6 +6847,7 @@ void cancelProduction(STRUCTURE *psBuilding)
 			MAX_PROD_RUN);
 		//clear the factories subject and quantity
 		psFactory->psSubject = NULL;
+		powerQueueCancelWorker((BASE_OBJECT *)psBuilding);
 		psFactory->quantity = 0;
 		//tell the interface
 		intManufactureFinished(psBuilding);
@@ -6876,7 +6868,7 @@ void holdProduction(STRUCTURE *psBuilding)
 	if (psFactory->psSubject)
 	{
 		//set the time the factory was put on hold
-		psFactory->timeStartHold = gameTime;
+		psFactory->workOnHold = true;
 		//play audio to indicate on hold
 		if (psBuilding->player == selectedPlayer)
 		{
@@ -6889,21 +6881,9 @@ void holdProduction(STRUCTURE *psBuilding)
 /*release a factory's production run from hold*/
 void releaseProduction(STRUCTURE *psBuilding)
 {
-	FACTORY		*psFactory;
-
 	ASSERT_OR_RETURN( , StructIsFactory(psBuilding), "structure not a factory");
 
-	psFactory = &psBuilding->pFunctionality->factory;
-
-	if (psFactory->psSubject && psFactory->timeStartHold)
-	{
-		//adjust the start time for the current subject
-		if (psFactory->timeStarted != ACTION_START_TIME)
-		{
-			psFactory->timeStarted += (gameTime - psFactory->timeStartHold);
-		}
-		psFactory->timeStartHold = 0;
-	}
+	StructureGetFactory(psBuilding)->workOnHold = false;
 }
 
 
@@ -7010,10 +6990,10 @@ void factoryProdAdjust(STRUCTURE *psStructure, DROID_TEMPLATE *psTemplate, BOOL 
 					//initialise the template
 					asProductionRun[factoryType][factoryInc][inc].psTemplate = NULL;
 					bCheckForCancel = true;
-					//add power back if we were working on this one
-					if (psFactory->psSubject == (BASE_STATS *)psTemplate)
+					// give back the power cost of the unit
+					if (psFactory->workStarted)
 					{
-						// FIXME: give power back
+						addPower(psStructure->player, ((DROID_TEMPLATE *)psFactory->psSubject)->powerPoints);
 					}
 				}
 			}
@@ -7026,12 +7006,12 @@ void factoryProdAdjust(STRUCTURE *psStructure, DROID_TEMPLATE *psTemplate, BOOL 
 				else
 				{
 					asProductionRun[factoryType][factoryInc][inc].quantity--;
-					//add power back if we were working on this one
-					if (psFactory->psSubject == (BASE_STATS *)psTemplate)
+					// give back the power cost of the unit
+					if (psFactory->workStarted)
 					{
-						// FIXME: give power back
+						addPower(psStructure->player, ((DROID_TEMPLATE *)psFactory->psSubject)->powerPoints);
 					}
-
+					
 					if (asProductionRun[factoryType][factoryInc][inc].quantity == 0)
 					{
 						//initialise the template
@@ -7966,44 +7946,7 @@ UDWORD structPowerToBuild(const STRUCTURE* psStruct)
 //this adjusts the time the relevant action started if the building is attacked by EW weapon
 void resetResistanceLag(STRUCTURE *psBuilding)
 {
-	if (bMultiPlayer)
-	{
-		switch (psBuilding->pStructureType->type)
-		{
-			case REF_RESEARCH:
-			{
-				RESEARCH_FACILITY *psResFacility = &psBuilding->pFunctionality->researchFacility;
-
-				//if working on a topic
-				if (psResFacility->psSubject)
-				{
-					//adjust the start time for the current subject
-					if (psResFacility->timeStarted != ACTION_START_TIME)
-					{
-						psResFacility->timeStarted += (gameTime - psBuilding->lastResistance);
-					}
-				}
-			}
-			case REF_FACTORY:
-			case REF_VTOL_FACTORY:
-			case REF_CYBORG_FACTORY:
-			{
-				FACTORY    *psFactory = &psBuilding->pFunctionality->factory;
-
-				//if working on a unit
-				if (psFactory->psSubject)
-				{
-					//adjust the start time for the current subject
-					if (psFactory->timeStarted != ACTION_START_TIME)
-					{
-						psFactory->timeStarted += (gameTime - psBuilding->lastResistance);
-					}
-				}
-			}
-			default: //do nothing
-				break;
-		}
-	}
+	// obsolete
 }
 
 

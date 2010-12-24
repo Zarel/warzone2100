@@ -10693,23 +10693,12 @@ BOOL scrPursueResearch(void)
 		pPlayerRes				= asPlayerResList[player]+ foundIndex;
 		psResFacilty->psSubject = (BASE_STATS*)pResearch;		  //set the subject up
 
-		if (IsResearchCancelled(pPlayerRes))
-		{
-			psResFacilty->powerAccrued = pResearch->researchPower;//set up as if all power available for cancelled topics
-		}
-		else
-		{
-			psResFacilty->powerAccrued = 0;
-		}
+		psResFacilty->workStarted = IsResearchCancelled(pPlayerRes);
 
 		MakeResearchStarted(pPlayerRes);
-		psResFacilty->timeStarted = ACTION_START_TIME;
-		psResFacilty->timeStartHold = 0;
-		psResFacilty->timeToResearch = pResearch->researchPoints / 	psResFacilty->researchPoints;
-		if (psResFacilty->timeToResearch == 0)
-		{
-			psResFacilty->timeToResearch = 1;
-		}
+		psResFacilty->workOnHold = false;
+		psResFacilty->workProgress = 0;
+		psResFacilty->workRequired = -1;
 #if defined (DEBUG)
 		{
 			char	sTemp[128];

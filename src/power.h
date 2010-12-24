@@ -41,13 +41,52 @@ extern "C"
 /** Used to multiply all repair calculations by to avaoid rounding errors. */
 #define POWER_FACTOR        100
 
+// The droid orders
+typedef enum _power_queue_type
+{
+	PQ_NONE,
+	PQ_MANUFACTURE,
+	PQ_RESEARCH,
+	PQ_BUILD,
+	PQ_NUM_TYPES
+} POWER_QUEUE_TYPE;
+
+typedef struct _power_queue
+{
+	POWER_QUEUE_TYPE     type;
+
+	int                  player;
+	BASE_OBJECT*         worker;
+	void*                workSubject;
+	/*
+	 * type == PQ_MANUFACTURE
+	 *   worker is STRUCTURE*
+	 *   workSubject is BASE_STATS*
+	 * type == PQ_RESEARCH
+	 *   worker is STRUCTURE*
+	 *   workSubject is BASE_STATS*
+	 * type == PQ_BUILD
+	 *   worker is DROID*
+	 *   workSubject is []
+	 */
+
+	int                  price;       ///< How much money we need to dequeue the thing
+	bool                 ready;       ///< We have enough power to dequeue this node
+	struct _power_queue* next;        ///< Next in the power queue linked list
+} POWER_QUEUE;
+
+#define POWER_QUEUE_MAX 100
+
 typedef struct _player_power
 {
-	float currentPower;         ///< The current amount of power avaialble to the player.
-	float powerProduced;        ///< Power produced
-	float powerRequested;       ///< Power requested
-	float economyThrottle;      ///< Which percentage of the requested power is actually delivered
+	int32_t          currentPower;          // 24.8 fixed point; 256 = 1 power point
+	int32_t          queuedPower;    // 24.8 fixed point
+	POWER_QUEUE*     powerQueue;
+	POWER_QUEUE*     powerQueueBack;
+	int              powerQueueSize;
 } PLAYER_POWER;
+
+extern PLAYER_POWER	asPower[MAX_PLAYERS];
 
 /** Allocate the space for the playerPower. */
 extern BOOL allocPlayerPower(void);
@@ -62,25 +101,23 @@ extern BOOL resetPlayerPower(UDWORD player, STRUCTURE *psStruct);
 extern void releasePlayerPower(void);
 
 /** Check the available power. */
-extern BOOL checkPower(int player, float quantity);
+extern BOOL checkPower(int player, int quantity);
 
-extern float requestPower(int player, float amount);
-extern int requestPowerFor(int player, float amount, int points);
+extern void addPower(int player, int quantity);
 
-extern void addPower(int player, float quantity);
-
-BOOL checkPower(int player, float quantity);
-void usePower(int player, float quantity);
+BOOL checkPower(int player, int quantity);
+void usePower(int player, int quantity);
 
 /** Update current power based on what was extracted during the last cycle and what Power Generators exist. */
 extern void updatePlayerPower(UDWORD player);
 
 /** Used in multiplayer to force power levels. */
-extern void setPower(int player, float power);
+extern void setPower(int player, int power);
 
 /** Get the amount of power current held by the given player. */
-extern float getPower(int player);
-extern float getExtractedPower(int player);
+extern int getPower(int player);
+extern int getQueuedPower(int player);
+extern int getExtractedPower(int player);
 
 /** Resets the power levels for all players when power is turned back on. */
 void powerCalc(BOOL on);
@@ -102,7 +139,16 @@ extern BOOL droidUsesPower(DROID *psDroid);
 /** Flag used to check for power calculations to be done or not. */
 extern	BOOL			powerCalculated;
 
-extern void throttleEconomy(void);
+extern int powerQueueProgress(BASE_OBJECT* worker);
+extern POWER_QUEUE* powerQueueAdd(POWER_QUEUE_TYPE type, BASE_OBJECT* worker, void* workSubject, int price);
+extern bool powerQueueMoveToFront(POWER_QUEUE* node);
+extern bool powerQueueMoveToBack(POWER_QUEUE* node);
+extern bool powerQueueCancel(POWER_QUEUE* node);
+extern void powerQueueCancelWorker(BASE_OBJECT* worker);
+extern bool powerQueueCancelSubject(BASE_OBJECT* worker, void* workSubject);
+extern bool powerQueueAccept(POWER_QUEUE* node);
+extern POWER_QUEUE* powerQueueNext(POWER_QUEUE_TYPE type, BASE_OBJECT* worker);
+extern bool powerQueueForce(POWER_QUEUE_TYPE type, BASE_OBJECT* worker, void* workSubject, int price);
 
 #ifdef __cplusplus
 }
