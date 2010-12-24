@@ -570,8 +570,8 @@ void intDisplayPowerBar(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset, WZ_DEC
 
 	BarWidth = BarGraph->width;
 	iV_SetFont(font_regular);
-	sprintf( szVal, "%d", realPower );
-	textWidth = iV_GetTextWidth( szVal );
+	sprintf(szVal, "%d", realPower + ManuPower);
+	textWidth = iV_GetTextWidth(szVal) + 3;
 	BarWidth -= textWidth;
 
 	if (ManPow > Avail)
@@ -661,6 +661,19 @@ void intDisplayPowerBar(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset, WZ_DEC
 	/* draw text value */
 	iV_SetTextColour(WZCOL_TEXT_BRIGHT);
 	iV_DrawText( szVal, iX, iY );
+
+	/* draw selected cost */
+	if (ManuPower)
+	{
+		sprintf(szVal, "-%d", ManuPower);
+		textWidth = iV_GetTextWidth(szVal) + 3;
+		iV_DrawImage(IntImages,IMAGE_PBAR_TOP,iX-3,iY+6);
+		iV_DrawImageRect(IntImages,IMAGE_PBAR_EMPTY,
+						 iX,y0+15,
+						 textWidth, iV_GetImageHeight(IntImages,IMAGE_PBAR_EMPTY));
+		iV_DrawImage(IntImages,IMAGE_PBAR_BOTTOM,iX+textWidth,iY+6);
+		iV_DrawText( szVal, iX, iY+16 );
+	}
 }
 
 
