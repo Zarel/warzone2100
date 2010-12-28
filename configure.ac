@@ -346,7 +346,7 @@ if test "x$enable_static" = "xyes" ; then
 	PKG_CHECK_MODULES([FREETYPE], [freetype2])
 fi
 
-PKG_CHECK_MODULES([GLee], [glee >= 5.4.0])
+PKG_CHECK_MODULES([GLEW], [glew >= 1.5.4])
 
 # Checks for libraries:
 
