@@ -346,29 +346,7 @@ if test "x$enable_static" = "xyes" ; then
 	PKG_CHECK_MODULES([FREETYPE], [freetype2])
 fi
 
-system_glee=false
-if test "x$host_os_mingw32" != "xyes" ; then
-	PKG_CHECK_MODULES([GLee], [glee >= 5.4.0], [system_glee=true], [system_glee=false])
-	if test "x$system_glee" = "xfalse" ; then
-		AX_EXT_HAVE_HEADER([GLee.h], [/usr/local/include/GL /usr/include/GL])
-		save_cppflags="${CPPFLAGS}"
-		CPPFLAGS="${CPPFLAGS} ${GLEE_H_CPPFLAGS}"
-		AC_CHECK_HEADER([GLee.h], [system_glee=true], [system_glee=false])
-		CPPFLAGS=${save_cppflags}
-		if test "x$system_glee" = "xtrue" ; then
-			AC_CHECK_LIB([GLee], [GLeeInit], [system_glee=true], [system_glee=false])
-			if test "x$system_glee" = "xtrue" ; then
-				AC_SUBST([GLee_CFLAGS], [${GLEE_H_CPPFLAGS}])
-				AC_SUBST([GLee_LIBS], [-lGLee])
-			fi
-		fi
-	fi
-fi
-AM_CONDITIONAL([SYSTEM_GLEE], [test "x$system_glee" = "xtrue"])
-if test "x$system_glee" = "xfalse" ; then
-	AC_MSG_NOTICE([Using integrated GLee])
-	AC_SUBST([GLee_CFLAGS], ['-I$(top_srcdir)/lib/ivis_opengl'])
-fi
+PKG_CHECK_MODULES([GLee], [glee >= 5.4.0])
 
 # Checks for libraries:
 
