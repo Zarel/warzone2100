@@ -394,6 +394,7 @@
 		434D40CE12ECC54400E15A39 /* pieclip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434D40BD12ECC54400E15A39 /* pieclip.cpp */; };
 		434D40CF12ECC54400E15A39 /* png_util.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434D40C512ECC54400E15A39 /* png_util.cpp */; };
 		434D40DD12ECC98900E15A39 /* piestate.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0246A1130BD3CC43004D1C70 /* piestate.cpp */; };
+		434D423412ECE5CC00E15A39 /* GLExtensionWrangler.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 439FBA8712C9C1A800CF4DFC /* GLExtensionWrangler.framework */; };
 		4353C86E1282199C00CAFEDA /* tone.c in Sources */ = {isa = PBXBuildFile; fileRef = 43C3B9C2118BEBE0000BBE59 /* tone.c */; };
 		4355E08010D5FADE00A19EE4 /* physfs_platforms.h in Headers */ = {isa = PBXBuildFile; fileRef = 4355E07F10D5FAC200A19EE4 /* physfs_platforms.h */; };
 		4355E13010D6028C00A19EE4 /* codec.h in Headers */ = {isa = PBXBuildFile; fileRef = 4355E12C10D6028C00A19EE4 /* codec.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -423,7 +424,6 @@
 		439FBAB612C9C4B500CF4DFC /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 439F36F21266877900D5EE2A /* OpenGL.framework */; };
 		439FBACF12C9C53500CF4DFC /* GLExtensionWrangler.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 439FBA8712C9C1A800CF4DFC /* GLExtensionWrangler.framework */; };
 		439FBAF112C9C57D00CF4DFC /* GLExtensionWrangler.framework in Copy frameworks */ = {isa = PBXBuildFile; fileRef = 439FBA8712C9C1A800CF4DFC /* GLExtensionWrangler.framework */; };
-		439FBB1C12C9C85200CF4DFC /* glew.c in Sources */ = {isa = PBXBuildFile; fileRef = 0223BBEB0CFE3FFA0056EF85 /* glew.c */; };
 		439FBB1D12C9C85400CF4DFC /* glew.h in Headers */ = {isa = PBXBuildFile; fileRef = 0223BC390CFE40680056EF85 /* glew.h */; };
 		439FBB1E12C9C85B00CF4DFC /* glxew.h in Headers */ = {isa = PBXBuildFile; fileRef = 0223BC3A0CFE40680056EF85 /* glxew.h */; };
 		439FBB1F12C9C86600CF4DFC /* wglew.h in Headers */ = {isa = PBXBuildFile; fileRef = 0223BC3B0CFE40680056EF85 /* wglew.h */; };
@@ -686,6 +686,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 02356D820BD3BB4100E9A019;
 			remoteInfo = Zlib;
+		};
+		434D423912ECE5D100E15A39 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 02356D660BD3BB2600E9A019 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 439FBA8612C9C1A800CF4DFC /* GLExtensionWrangler */;
+			remoteInfo = GLExtensionWrangler;
 		};
 		439FBACD12C9C52C00CF4DFC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -1641,6 +1648,7 @@
 				439F36F31266877900D5EE2A /* OpenGL.framework in Frameworks */,
 				439F36F5126687A900D5EE2A /* libfreetype.6.dylib in Frameworks */,
 				439F36F7126687E500D5EE2A /* libfontconfig.1.dylib in Frameworks */,
+				434D423412ECE5CC00E15A39 /* GLExtensionWrangler.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3225,6 +3233,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				434D423A12ECE5D100E15A39 /* PBXTargetDependency */,
 			);
 			name = QuesoGLC;
 			productName = QuesoGLC;
@@ -3897,7 +3906,6 @@
 				0223BC300CFE40210056EF85 /* fribidi_types.c in Sources */,
 				0223BC340CFE40210056EF85 /* fribidi.c in Sources */,
 				02F5CC570D1490620000A2D0 /* database.c in Sources */,
-				439FBB1C12C9C85200CF4DFC /* glew.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -4375,6 +4383,11 @@
 			isa = PBXTargetDependency;
 			target = 02356D820BD3BB4100E9A019 /* Zlib */;
 			targetProxy = 02DDA8D20BD3C3780049AB60 /* PBXContainerItemProxy */;
+		};
+		434D423A12ECE5D100E15A39 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 439FBA8612C9C1A800CF4DFC /* GLExtensionWrangler */;
+			targetProxy = 434D423912ECE5D100E15A39 /* PBXContainerItemProxy */;
 		};
 		439FBACE12C9C52C00CF4DFC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
