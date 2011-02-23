@@ -1,6 +1,7 @@
 SUBDIRS = \
 	  build_tools/autorevision \
 	  win32 \
+	  3rdparty \
 	  lib/framework \
 	  lib/exceptionhandler \
 	  lib/script \

@@ -282,12 +282,12 @@ warzone2100_LDADD = \
 	$(top_builddir)/lib/sound/libsound.a \
 	$(top_builddir)/lib/script/libscript.a \
 	$(top_builddir)/lib/netplay/libnetplay.a \
-	$(top_builddir)/lib/netplay/miniupnpc/libminiupnpc.a \
 	$(top_builddir)/lib/ivis_opengl/libivis_opengl.a \
 	$(top_builddir)/lib/gamelib/libgamelib.a \
 	$(top_builddir)/lib/framework/libframework.a \
 	$(top_builddir)/lib/iniparser/libiniparser.a \
-	$(top_builddir)/lib/exceptionhandler/libexceptionhandler.a
+	$(top_builddir)/lib/exceptionhandler/libexceptionhandler.a \
+	$(top_builddir)/3rdparty/miniupnpc/libminiupnpc.a
 
 warzone2100_LDADD += $(LTLIBINTL) $(SDL_LIBS) $(PHYSFS_LIBS) $(PNG_LIBS) $(OGGVORBIS_LIBS) $(THEORA_LIBS) $(OPENAL_LIBS) $(OPENGLC_LIBS) $(OPENGL_LIBS) $(X11_LIBS) $(GLee_LIBS)
 
