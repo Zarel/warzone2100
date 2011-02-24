@@ -195,8 +195,11 @@ include_directories(
   ${GLC_INCLUDE_DIRS}
   ${OGGVORBIS_INCLUDE_DIR}
   ${ZLIB_INCLUDE_DIR}
-  ${CMAKE_SOURCE_DIR}/src/ivis_opengl # GLee.h
 )
+
+if (NOT SYSTEM_GLEE)
+	include_directories (${CMAKE_SOURCE_DIR}/lib/ivis_opengl) # GLee.h
+endif ()
 
 if (NEED_DEP_DEPS)
   find_package (Fontconfig)

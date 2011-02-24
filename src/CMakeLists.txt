@@ -273,10 +273,6 @@ if (NOT WZ_LIBIFY)
 	endforeach ()
 endif (NOT WZ_LIBIFY)
 
-if (NOT SYSTEM_GLEE)
-	include_directories (${CMAKE_SOURCE_DIR}/lib/ivis_opengl)
-endif ()
-
 add_executable (warzone2100 ${warzone2100_SOURCES})
 
 if (WZ_LIBIFY)
