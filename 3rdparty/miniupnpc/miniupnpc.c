@@ -16,8 +16,6 @@
 #endif
 #endif
 
-#include "lib/framework/wzglobal.h"
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -40,7 +38,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/param.h>
-#ifdef WZ_OS_MAC
+#if defined(__APPLE__) && (defined(__GNUC__) || defined(__xlC__) || defined(__xlc__))
 # undef _POSIX_C_SOURCE
 # include <netinet/in.h>
 #else

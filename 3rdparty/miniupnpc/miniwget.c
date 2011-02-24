@@ -15,7 +15,6 @@
 #define MAXHOSTNAMELEN 64
 #define MIN(x,y) (((x)<(y))?(x):(y))
 #define snprintf _snprintf
-#define herror
 #define socklen_t int
 #else
 #include <unistd.h>
@@ -58,11 +57,13 @@ miniwget2(const char * url, const char * host,
 	hp = gethostbyname(host);
 	if(hp==NULL)
 	{
+#ifdef herror
 		herror(host);
+#endif
 		return NULL;
 	}
-	/*  memcpy((char *)&dest.sin_addr, hp->h_addr, hp->h_length);  */
-	memcpy(&dest.sin_addr, hp->h_addr, sizeof(dest.sin_addr));
+	/*  memcpy((char *)&dest.sin_addr, hp->h_addr_list[0], hp->h_length);  */
+	memcpy(&dest.sin_addr, hp->h_addr_list[0], sizeof(dest.sin_addr));
 	memset(dest.sin_zero, 0, sizeof(dest.sin_zero));
 	s = socket(PF_INET, SOCK_STREAM, 0);
 	if(s < 0)
