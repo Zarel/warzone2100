@@ -31,7 +31,7 @@ include (CheckFunctionExists)
 include (CheckIncludeFiles)
 #include (CheckLibraryExists)
 #include (CMakeDependentOption)
-include (FindPkgConfig)
+#include (FindPkgConfig)
 #include (PreprocessorUtils)
 #include (TestBigEndian)
 
@@ -174,13 +174,11 @@ find_package (OpenAL)
 find_package (PhysFS)
 find_package (Gettext)
 find_package (Theora)
+find_package (GLC)
 find_package (FLEX)
 find_package (YACC)
 find_package (OggVorbis)
 find_package (ZLIB)
-
-# use pkg-config because adds the secondary requirements of quesoglc
-pkg_check_modules(GLC REQUIRED quesoglc)
 
 
 # TODO Use system GLee
@@ -199,6 +197,23 @@ include_directories(
   ${ZLIB_INCLUDE_DIR}
   ${CMAKE_SOURCE_DIR}/src/ivis_opengl # GLee.h
 )
+
+if (NEED_DEP_DEPS)
+  find_package (Fontconfig)
+  find_package (Freetype2)
+  find_package (EXPAT)
+  find_package (Iconv)
+  include_directories (
+    ${EXPAT_INCLUDE_DIR}
+    ${ICONV_INCLUDE_DIR}
+    ${FREETYPE2_INCLUDE_DIRS}
+    ${FONTCONFIG_INCLUDE_DIR}
+  )
+  add_definitions (
+    ${FREETYPE2_DEFINITIONS}
+    ${FONTCONFIG_DEFINITIONS}
+  )
+endif (NEED_DEP_DEPS)
 
 if (WIN32)
   find_library (WINSOCK2_LIBRARY

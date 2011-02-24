@@ -313,6 +313,15 @@ target_link_libraries (warzone2100
   ${VORBISFILE_LIBRARY}
 )
 
+if (NEED_DEP_DEPS)
+  target_link_libraries (warzone2100
+    ${FONTCONFIG_LIBRARIES}
+    ${FREETYPE2_LIBRARIES}
+    ${ICONV_LIBRARIES}
+    ${EXPAT_LIBRARY}
+  )
+endif (NEED_DEP_DEPS)
+
 if (WIN32)
   target_link_libraries(warzone2100
     ${WINMM_LIBRARY}
