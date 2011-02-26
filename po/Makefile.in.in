@@ -379,7 +379,7 @@ dist2: stamp-po $(DISTFILES)
 	done
 
 POTFILES.in: $(srcdir)/update-po.sh
-	(cd $(srcdir); ./update-po.sh)
+	(cd $(srcdir); ./update-po.sh .)
 
 update-po-custom: POTFILES.in
 

@@ -444,7 +444,7 @@ fi
 
 WZ_CPPFLAGS="${WZ_CPPFLAGS} -DWZ_DATADIR=\"\\\"\${datadir}/\${PACKAGE}\\\"\""
 WZ_CPPFLAGS="${WZ_CPPFLAGS} -DLOCALEDIR=\"\\\"\${localedir}\\\"\""
-WZ_CPPFLAGS="${WZ_CPPFLAGS} -I\$(top_srcdir)"
+WZ_CPPFLAGS="${WZ_CPPFLAGS} -I\$(top_srcdir) -I\$(top_srcdir)/3rdparty"
 
 
 AC_SUBST([WZ_CPPFLAGS], [${WZ_CPPFLAGS}])
