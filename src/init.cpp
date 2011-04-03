@@ -344,8 +344,8 @@ bool rebuildSearchPath( searchPathMode mode, bool force )
 					debug(LOG_WZ, "Adding [%s] to search path", curSearchPath->path);
 #endif // DEBUG
 					// Add maps and global and multiplay mods
-					PHYSFS_addToSearchPath( curSearchPath->path, PHYSFS_APPEND );
 					addSubdirs( curSearchPath->path, "maps", PHYSFS_APPEND, use_override_map?override_map:NULL, false );
+					PHYSFS_addToSearchPath( curSearchPath->path, PHYSFS_APPEND );
 					addSubdirs( curSearchPath->path, "mods/music", PHYSFS_APPEND, NULL, false );
 					addSubdirs( curSearchPath->path, "mods/global", PHYSFS_APPEND, use_override_mods?override_mods:global_mods, true );
 					addSubdirs( curSearchPath->path, "mods", PHYSFS_APPEND, use_override_mods?override_mods:global_mods, true );
